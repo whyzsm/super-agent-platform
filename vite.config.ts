@@ -1,6 +1,6 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import path from 'path';
+import path from 'node:path';
 import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
@@ -8,7 +8,8 @@ export default defineConfig(() => {
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        // 用 import.meta.dirname 替代 __dirname：Vite 8 的 native config loader 不支持后者。
+        '@': path.resolve(import.meta.dirname, '.'),
       },
     },
     server: {

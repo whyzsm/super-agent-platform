@@ -219,14 +219,14 @@ flowchart LR
 | M11 | Agent Registry | S3 / S4 | S3-3、S3-7、S4-4 | `TaskRole` 三值枚举，无注册表 |
 | M12 | Runtime Adapter Hub | S1 / S3 | S1-5、S3-5 | **P0 垂直切片已落地 headless-json adapter** |
 | M13 | Daemon Fleet | S3 | S3-4 | `DaemonRunner` 类型 + 前端模拟舰队 |
-| M14 | Workspace Manager | S1 / S5 | S1-3、S5-2 | `worktreePath` 只是字符串，未真建 |
+| M14 | Workspace Manager | S1 / S5 | S1-3、S5-2 | **已落地真实 `git worktree`**：`src/workspace/worktreeManager.ts` + `POST/DELETE /api/tasks/:id/worktree`，12 单测 + 9 项 HTTP 断言；跨仓写集调度仍属 S5 |
 | M15 | Credential Broker | S1 | S1-4 | 未开始；默认 IM 密钥已改为 env 注入（S0-3 技术部分） |
 | M16 | Memory Hub | S2 / S4 | S2-3、S4-5 | 状态文件里的 `MemoryAsset` + trigram 召回 |
 | M17 | Asset Registry（Git-native） | S2 / S4 | S2-2、S4-3 | `.teamai/` 本地文件，`syncedToGit` 已改为恒 false（不再假状态） |
-| M18 | Recall & Context Assembly | S2 / S4 | S2-4、S4-5 | `recallEngine.ts` 四级 ACL + trigram |
-| M19 | Policy & Audit | S2 | **S2-9（新增补齐）** | 仅 `detectDangerousCommand()` / `redactSecrets()` 散落规则 |
+| M18 | Recall & Context Assembly | S2 / S4 | S2-4、S4-5 | `recallEngine.ts` 四级 ACL；召回改用**查询覆盖率**（`computeQueryCoverage`），修掉中文长文档召不回；Jaccard 仅留给去重 |
+| M19 | Policy & Audit | S2 | **S2-9（新增补齐）** | `detectDangerousCommand()` / `redactSecrets()` + 显式路由动作表（写操作 fail-closed）+ `admin:reset` 与不可变审计 |
 | M20 | Observability & Eval | S3 | S3-6 | 内存事件数组 + SSE，无 trace/cost |
-| M21 | Console | S2 / S4 | S2-8、S4-6 | React + xyflow 四 tab，已有 DAG 画布与审核台 |
+| M21 | Console | S2 / S4 | S2-8、S4-6 | React + xyflow 四 tab；DAG 画布、审核台、工作树建删按钮；窄屏 `max-h` 修正使检验舱可达 |
 
 **结论**：21 个模块全部有归属阶段与 WBS 落点。其中 M8、M12 已有 P0 垂直切片的最小实现；M4、M9 有可复用的纯函数基础；其余为待建。补齐动作：**新增 S2-9（M19）、S3-9（M3）两个工作包**，并给 M4/M8/M14/M15 补上模块编号，避免"职责写了但模块追踪断链"。
 

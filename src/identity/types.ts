@@ -11,7 +11,9 @@ export type Action =
   | 'memory:approve'
   | 'teamai:write'
   | 'runtime:spawn'
-  | 'runtime:events';
+  | 'runtime:events'
+  // 平台级破坏性操作（重置状态等）：只有 admin 可执行，不接受角色并集降级。
+  | 'admin:reset';
 
 export interface Principal {
   userId: string;

@@ -57,4 +57,4 @@ grep -r "要改的值或符号" src server.ts
 
 ## 验证命令
 
-`npm run lint`（`tsc --noEmit`）与 `npm test`（`node --import tsx --test`，14 个 `node:test` 用例全绿）。
+`npm run lint`（`tsc --noEmit`）与 `npm test`（`node --import tsx --test`，136 个 `node:test` 用例全绿）。

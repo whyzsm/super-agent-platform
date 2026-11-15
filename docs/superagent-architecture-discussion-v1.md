@@ -64,6 +64,8 @@
 | "Skill 同步到 Git" | `solidify-sop` / `memories/:id/approve` 会写本地 `.teamai/skills/*.md` 并把 `syncedToGit` 置为 `true`，但**没有任何 git add/commit/push/MR** | `syncedToGit` 是假状态；Git-native 评审闭环是新增工作量 |
 | 硬编码 | `teamId='team-platform-core'`、`createdBy='lin.wei'`、`IM_WEBHOOK_SECRET` 默认明文 `superagent-dev-im-secret`、内部 hostname 与机器名写在 seed 与 state 中 | 身份、密钥、环境元数据必须外置；**已提交的 state 文件需移出版本控制并脱敏** |
 
+> **注（后续修订）**：上表描述的是本讨论稿落笔时的真实起点，保留作为差距基线。其中两项已在第二轮落地，阅读时不要按上表判断当前现状：①「Git Worktree 物理隔离」→ 已由 `src/workspace/worktreeManager.ts` 真实 `git worktree add/remove` 兑现；②「MCP 记忆召回」→ `/api/mcp` 已是标准 JSON-RPC 2.0 端点（`src/mcp/server.ts`）。以 `docs/superagent-unblock-solution-v1.md` §9.5 为准。
+
 **但这些东西值得保留**：`parseSkillFrontmatter` 与开放 Agent Skills 规范的 frontmatter 思路一致；`MemoryAsset.acl` 四级与 TencentDB 团队资产的权限模型同构；`DaemonEnvelope.seq` + `OfflineSeqQueue` 是靠谱的断线续传雏形；`detectDangerousCommand` / `redactSecrets` 可以直接演化为策略规则集；8 态状态机与三类门禁的业务语义基本正确。
 
 ### 1.3 能力差距矩阵

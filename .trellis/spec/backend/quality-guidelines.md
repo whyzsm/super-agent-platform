@@ -21,7 +21,7 @@
 ## 验证命令（只写真实存在的）
 
 - `npm run lint` → 实际是 `tsc --noEmit`（`package.json` 无 `typecheck` 脚本）。
-- `test` 脚本已补齐：`node --import tsx --test "src/**/*.test.ts"`，4 个测试文件共 14 个用例全绿；`typecheck` 脚本仍不存在，`pnpm test` 也不可用。
+- `test` 脚本已补齐：`node --import tsx --test "src/**/*.test.ts"`，12 个测试文件共 136 个用例全绿；`typecheck` 脚本仍不存在，`pnpm test` 也不可用。
 - `.teamai/hooks/pre-merge-gate.sh` 写的是 `pnpm lint && pnpm typecheck && pnpm test --run`，`.teamai/AGENTS.md` 也要求这三步——**与工程实际不一致**，详见 [guides/team-assets.md](../guides/team-assets.md)。
 
 ## 当前实现状态（诚实标注）

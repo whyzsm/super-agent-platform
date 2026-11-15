@@ -38,6 +38,28 @@ export function computeTextSimilarity(a: string, b: string): number {
   return union === 0 ? 0 : Number((intersection / union).toFixed(4));
 }
 
+/**
+ * 查询覆盖率：查询侧 trigram 被语料命中的比例（intersection / |query trigrams|）。
+ *
+ * 为什么不复用 computeTextSimilarity（Jaccard）：召回场景里查询很短、语料很长，
+ * Jaccard 的分母被语料长度主导，短查询天然趋近 0——「对账单」「幂等」明明在标题里
+ * 却召回不到（实测 score≈0.008 < 阈值）。覆盖率对长短不对称比较是正确度量，
+ * 因此召回用本函数；去重（computeMaxDuplicateScore）是对称比较，仍用 Jaccard。
+ */
+export function computeQueryCoverage(query: string, corpus: string): number {
+  const setA = tokenizeTrigrams(query);
+  const setB = tokenizeTrigrams(corpus);
+  if (setA.size === 0 || setB.size === 0) return 0;
+  let hit = 0;
+  for (const g of setA) {
+    if (setB.has(g)) hit += 1;
+  }
+  return Number((hit / setA.size).toFixed(4));
+}
+
+/** 召回准入分：低于该值视为不相关，避免把噪声塞进上下文。 */
+export const MIN_RECALL_SCORE = 0.2;
+
 export function findMatchedAcl(
   asset: MemoryAsset,
   caller: RecallCallerContext,
@@ -84,11 +106,16 @@ export function recallMemoryAssets(
     if (!matchedAcl) continue;
 
     const corpus = `${asset.title}\n${asset.contentMd}`;
-    const trigramScore = computeTextSimilarity(q, corpus);
-    const keywordBoost = corpus.toLowerCase().includes(q.toLowerCase()) ? 0.35 : 0;
-    const score = Math.min(1, Number((trigramScore + keywordBoost).toFixed(4)));
+    // 整串包含 = 精准命中，直接给满分；否则按「全语料覆盖率 0.6 + 标题覆盖率 0.4」加权，
+    // 让标题命中的资产排在正文偶然命中的前面。
+    const exactHit = corpus.toLowerCase().includes(q.toLowerCase());
+    const coverage = computeQueryCoverage(q, corpus);
+    const titleCoverage = computeQueryCoverage(q, asset.title);
+    const score = exactHit
+      ? 1
+      : Math.min(1, Number((coverage * 0.6 + titleCoverage * 0.4).toFixed(4)));
 
-    if (score > 0.02) {
+    if (score >= MIN_RECALL_SCORE) {
       results.push({ asset, score, matchedAcl });
     }
   }

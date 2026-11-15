@@ -171,4 +171,29 @@
 
 - 默认决策（Q1 取 B 过渡、Q4 凭证留本机、Q5 红线、Q11 只清当前版本）**可撤销**：换 §4 的 adapter 绑定或改配置即可，不等于替用户做最终拍板。
 - 三个本地实现均以**单进程单写者**为前提；多 worker 并发写同一日志需文件锁或换生产 adapter，已写入 `.trellis/spec/backend/platform-ports.md` 的「常见错误」。
-- 真实模型登录态与 stream-json 事件结构仍未实测；`/api/mcp/recall` 仍是普通 HTTP POST，不是 MCP server；`worktreePath` 仍是字符串。这三项保持 deferred，不拿模拟结果顶替。
+- 第 9.5 节落地后，`worktreePath` 与 MCP 两项已不再是 deferred：前者由 `git worktree` 真实落盘，后者是标准 JSON-RPC 2.0 端点。
+- **仍保持 deferred 的只有**：真实模型登录态与 stream-json 事件结构（未实测，需额度与账号，见 §7-3）、Postgres / Temporal / OIDC 生产 adapter（本机无服务）。
+
+### 9.5 第二轮增量（运行态驱动，逐项实测）
+
+> 执行方式：先 `npm run dev` 把服务跑起来，再用真实 HTTP 冒烟（`node scripts/e2e-smoke.mjs`）驱动，
+> 缺陷全部来自运行态观察而非纸面推演。
+
+| # | 缺陷 / 缺口 | 真实根因 | 修复落点 | 验收证据 |
+| --- | --- | --- | --- | --- |
+| 1 | `.env` 完全不生效 | `dotenv` 装了依赖但 `server.ts` 从未 import，`IM_WEBHOOK_SECRET` 只能靠命令行注入 | `server.ts` 首行 `import 'dotenv/config'`（ESM 提升保证先于模块顶层 `process.env` 读取） | 写 `.env` 后不传命令行变量，IM 卡片端点由 503 → **200**；启动不再打印未配置警告 |
+| 2 | RBAC 语义错位 | `actionFor` 对未登记路由**默认返回 `task:advance`**，导致 `/api/mcp/recall`（只读）要求写权限、`/api/memories/:id/reject` 落错权限域、`/api/reset` 任意 developer 可调 | 改为显式 `ROUTE_ACTIONS` 表；写方法未登记 → **fail-closed 403** + 审计 `denied`；新增 `admin:reset`（admin 独占） | 冒烟 6 项：viewer 可调 recall/retrospective、developer 调 reset **403**、reviewer 可 reject |
+| 3 | 「物理隔离」只是字符串 | `worktreePath` 从未真正建目录，UI 可点进去不存在的路径 | 新增 `src/workspace/worktreeManager.ts`：`git worktree add/remove`、`spawnSync` 无 shell、路径与 ref 白名单、幂等、失败清空目录、`info/exclude` 自动排除 | 12 个单测（真实 `git init`）+ 9 项 HTTP 断言；实测 `task-2041-review` 落盘 `.worktrees/task-2041-review`，主仓 `git status` 无非预期条目 |
+| 4 | MCP 名不副实 | `/api/mcp/recall` 只是普通 HTTP POST，无握手/无 tool 契约 | 新增 `src/mcp/server.ts`（`initialize` / `tools/list` / `tools/call` / `ping` / 批量 / 通知）+ `scripts/mcp-stdio.mjs` 串行桥 | 21 个单测 + 8 项 HTTP 断言 + stdio 实跑（3 行请求 → 3 行响应，通知无回包） |
+| 5 | 中文记忆召不回 | 召回用 Jaccard trigram 相似度，查询短、语料长时分母被语料主导，「对账单 幂等」明明在标题里却 score≈0.008 < 阈值 0.02 | 新增 `computeQueryCoverage()`（查询侧覆盖率）用于召回；`0.6 全文 + 0.4 标题` 加权；Jaccard 保留给去重（对称比较） | 「对账单 幂等」**0 → 1 条**（score 0.25），「Webhook 签名」score 1，无关查询仍 0，draft 仍不返回 |
+| 6 | `reset` 覆写人工维护的团队资产 | seed 里 TeamAI 资产写的是 **pnpm** 命令（`pnpm lint` / `pnpm typecheck` / `pnpm test --run`），而本仓库是 npm 且无 `typecheck` 脚本；`syncTeamAiFileToDisk` 无条件覆写 | seed 改 npm 真实命令；`syncTeamAiFileToDisk(overwrite=false)`：`reset` 只补建缺失文件、不覆写仓库资产 | 改前 `git diff .teamai/` 出现 pnpm 命令（hook 必失败）；改后 `reset` 前后 md5 一致 |
+| 7 | 状态机拒绝时客户端只能猜 | `resource-transition` 400 只回 `{error, task}`，缺 `from`/`to` | 400 响应补 `from` / `to`（kind 非法时 `to:null`） | 冒烟断言 `HUMAN_GATE->BLOCKED_BY_RESOURCE` 被拒且响应带 `from/to` |
+| 8 | 小屏下检验舱不可达 | `DagCanvas` 为 `flex-1` 撑满剩余高度，把 `NodeInspectorPane` 挤出可视区且容器滚不到 | `DagCanvas` 加 `max-h-[65vh] lg:max-h-none`（仅窄屏生效） | UI 工作树按钮已接线并打入产物（类型检查 + 构建通过） |
+| 9 | 验收不可复现 | 前轮验收是一次性 curl，无法回归 | 新增 `scripts/e2e-smoke.mjs`（54 项真实 HTTP 断言，含 reset 复位） | `node scripts/e2e-smoke.mjs` → **54/54 通过** |
+| 10 | Vite 8 配置告警 | `vite.config.ts` 用 `__dirname`，native config loader 不支持 | 改 `import.meta.dirname` | 构建告警消失 |
+
+**本轮实测汇总**：`npm run lint` 退出码 0；`npm test` **136 用例全绿**；`npm run build` 通过（493.78 kB / gzip 149.77 kB）；`node scripts/e2e-smoke.mjs` **54/54**；服务在 `http://localhost:3000` 实测渲染正常。
+
+**新增规范**：`.trellis/spec/backend/workspace-worktree.md`、`.trellis/spec/backend/mcp-server.md`；`backend/index.md` 的实现状态与验证命令已同步（不再声称 worktree 是字符串、MCP 是普通 POST、测试 14 例）。
+
+**仍未做的**（明确记账，不算完成）：S1-1 拆分 1845 行 `server.ts`（纯结构调整，无用户可见收益，风险集中在无直接单测覆盖的路由层，本轮不做）；Postgres / OIDC / Temporal 生产 adapter；真实模型 CLI 实测；`git push` 与 Q11 历史重写属外部动作，仍需授权。

@@ -23,12 +23,12 @@
 - 解析由 `src/engine/stateMachine.ts` 的 `parseSkillFrontmatter()`（`:298`）与 `extractSkillDraft()`（`:347`）负责；`POST /api/requirements/:id/solidify-sop`（`server.ts:919`）与 `POST /api/memories/:id/approve`（`:1202`）会把内容经 `syncTeamAiFileToDisk()`（`:38`）写成本地 `.teamai/skills/*.md`。
 - 写盘后 `syncedToGit` 保持 `false`（**没有任何 git commit / MR**），见 [backend/state-persistence.md](../backend/state-persistence.md)。
 
-## 门禁脚本与工程实际不一致（重点）
+## 门禁脚本与工程实际（已修正，勿回退）
 
-- `.teamai/hooks/pre-merge-gate.sh` 写 `pnpm lint && pnpm typecheck && pnpm test --run`，`.teamai/AGENTS.md` 也要求 `pnpm lint` / `pnpm typecheck` / `pnpm test` 三步全绿。
-- 实际 `package.json` 脚本：`dev` / `start`（`tsx server.ts`）、`build`（`vite build`）、`preview` / `clean`、`lint`（`tsc --noEmit`）、`test`（`node --import tsx --test`）；**仍没有 `typecheck` 脚本**。锁文件为 `package-lock.json`，不是 pnpm 的 `pnpm-lock.yaml`。
-- 因此该脚本在本仓库**仍不可直接运行**（`pnpm typecheck` / `pnpm test --run` 均不成立）。可用验证命令是 `npm run lint` 与 `npm test`（14 个用例全绿）。详见 [backend/quality-guidelines.md](../backend/quality-guidelines.md)。
-- 同理，`AGENTS.md` 的 worktree 隔离、`.teamai/rules/sandbox-guard.md` 的 BLOCK 规则，在代码里对应的是 `detectDangerousCommand()`（`stateMachine.ts:241`）的字符串检测与 `worktreePath` 字符串字段，而非真实 `git worktree add` / 进程拦截。
+- 曾经 `.teamai/hooks/pre-merge-gate.sh` 写 `pnpm lint && pnpm typecheck && pnpm test --run`、`.teamai/AGENTS.md` 要求三步 pnpm 全绿，而实际 `package.json` 是 npm 工程且**没有 `typecheck` 脚本**（`tsc --noEmit` 已由 `lint` 覆盖），锁文件是 `package-lock.json`。该脚本因此必然失败。
+- 现在两者均已改为 `npm run lint` + `npm test` 两步；`src/data/seed.ts` 的种子内容同步为 npm 命令。
+- **不要再改回 pnpm**：`syncTeamAiFileToDisk(overwrite=false)` 在 `reset` 时只补建缺失文件、不覆写仓库里人工维护的团队资产，所以 seed 与磁盘文件必须保持一致，否则 UI 显示与真实文件会分叉。
+- 仍适用的限制：`AGENTS.md` 的 worktree 隔离要求现在由真实 `git worktree` 兑现；`.teamai/rules/sandbox-guard.md` 的 BLOCK 规则对应 `detectDangerousCommand()`（`stateMachine.ts`）的字符串检测，**不是进程级拦截**。
 
 ## 讨论稿与现状的区别
 

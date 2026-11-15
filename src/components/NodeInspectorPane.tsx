@@ -27,6 +27,8 @@ interface NodeInspectorPaneProps {
   mutating: boolean;
   onSelectTask: (taskId: string) => void;
   onAdvanceTask: (taskId: string) => void;
+  onProvisionWorktree: (taskId: string) => void;
+  onReleaseWorktree: (taskId: string) => void;
   onSimulateFailure: (taskId: string) => void;
   onSimulateDanger: (taskId: string) => void;
   onGateDecision: (
@@ -48,6 +50,8 @@ export function NodeInspectorPane({
   mutating,
   onSelectTask,
   onAdvanceTask,
+  onProvisionWorktree,
+  onReleaseWorktree,
   onSimulateFailure,
   onSimulateDanger,
   onGateDecision,
@@ -232,10 +236,32 @@ export function NodeInspectorPane({
         {tab === 'terminal' && (
           <div className="space-y-3">
             <div className="bg-slate-950 text-slate-100 rounded-md p-3 font-mono text-[11px] leading-relaxed space-y-1 overflow-x-auto">
-              <div className="flex items-center justify-between text-slate-400 border-b border-slate-800 pb-2 mb-2">
-                <span className="flex items-center gap-1.5">
-                  <TerminalIcon className="w-3.5 h-3.5" aria-hidden="true" />
-                  {task.adapterMode} · {task.worktreePath || task.worktreeBranch}
+              <div className="flex items-center justify-between gap-2 text-slate-400 border-b border-slate-800 pb-2 mb-2">
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <TerminalIcon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  <span className="truncate" title={task.worktreePath || task.worktreeBranch}>
+                    {task.adapterMode} · {task.worktreePath || task.worktreeBranch}
+                  </span>
+                </span>
+                {/* M14：真实 git worktree 的建删入口，路径为服务端落盘返回的绝对路径 */}
+                <span className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    disabled={mutating}
+                    onClick={() => onProvisionWorktree(task.id)}
+                    className="px-2 py-0.5 rounded border border-slate-700 text-[10px] text-emerald-300 hover:bg-slate-800 disabled:opacity-50"
+                  >
+                    {task.worktreePath ? '重建工作树' : '创建工作树'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={mutating || !task.worktreePath}
+                    onClick={() => onReleaseWorktree(task.id)}
+                    title={task.worktreePath ? '删除真实工作树目录（分支保留）' : '当前没有已创建的工作树'}
+                    className="px-2 py-0.5 rounded border border-slate-700 text-[10px] text-rose-300 hover:bg-slate-800 disabled:opacity-50"
+                  >
+                    删除
+                  </button>
                 </span>
               </div>
               {task.terminalLines.map((line, idx) => (

@@ -10,7 +10,7 @@ import type { Action, Principal, Role } from './types';
 //   developer : viewer 的 + requirement:create, task:advance, runtime:spawn
 //   reviewer  : viewer 的 + task:gate, memory:approve, teamai:write
 //               （注意：reviewer 不继承 developer 的写权限，二者是并列分支）
-//   admin     : 全部 8 个 Action
+//   admin     : 全部 Action（含 admin:reset）
 //
 // 判定：主体只要拥有任一角色、且该角色有效权限集包含目标 action 即放行（取并集）。
 //
@@ -19,7 +19,8 @@ import type { Action, Principal, Role } from './types';
 //   任何写操作以及 runtime:events 一律拒绝。
 // ============================================================================
 
-const ALL_ACTIONS: Action[] = [
+/** 权威动作全集：测试与运行时校验都用这一份，避免两份清单漂移。 */
+export const ALL_ACTIONS: Action[] = [
   'read',
   'requirement:create',
   'task:advance',
@@ -28,6 +29,7 @@ const ALL_ACTIONS: Action[] = [
   'teamai:write',
   'runtime:spawn',
   'runtime:events',
+  'admin:reset',
 ];
 
 const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Action>> = {

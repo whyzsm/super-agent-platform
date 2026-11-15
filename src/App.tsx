@@ -32,6 +32,8 @@ export default function App() {
     fetchBootstrap,
     createRequirement,
     advanceTask,
+    provisionWorktree,
+    releaseWorktree,
     simulateFailure,
     simulateDanger,
     submitGateDecision,
@@ -132,6 +134,8 @@ export default function App() {
             mutating={mutating}
             onSelectTask={selectTask}
             onAdvanceTask={advanceTask}
+            onProvisionWorktree={provisionWorktree}
+            onReleaseWorktree={releaseWorktree}
             onSimulateFailure={simulateFailure}
             onSimulateDanger={simulateDanger}
             onGateDecision={submitGateDecision}

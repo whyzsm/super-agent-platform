@@ -41,6 +41,8 @@ interface WorkspaceStore {
     sopTemplate: SopTemplateId;
   }) => Promise<boolean>;
   advanceTask: (taskId: string) => Promise<void>;
+  provisionWorktree: (taskId: string) => Promise<void>;
+  releaseWorktree: (taskId: string) => Promise<void>;
   simulateFailure: (taskId: string, errorLog?: string) => Promise<void>;
   simulateDanger: (taskId: string, command?: string) => Promise<void>;
   submitGateDecision: (
@@ -172,6 +174,56 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       set({
         mutating: false,
         error: err instanceof Error ? err.message : '推进节点失败',
+      });
+    }
+  },
+
+  provisionWorktree: async (taskId) => {
+    set({ mutating: true });
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/worktree`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        worktree?: { path?: string; branch?: string };
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      await get().fetchBootstrap();
+      set({
+        mutating: false,
+        notice: `隔离工作树就绪：${data.worktree?.path ?? taskId}`,
+      });
+    } catch (err) {
+      set({
+        mutating: false,
+        error: err instanceof Error ? err.message : '创建工作树失败',
+      });
+    }
+  },
+
+  releaseWorktree: async (taskId) => {
+    // 目录是真实存在的，删除前必须二次确认，避免误点丢掉未提交的 agent 产出。
+    if (!window.confirm(`确认删除 ${taskId} 的真实工作树目录？该操作会移除磁盘文件（分支默认保留）。`)) {
+      return;
+    }
+    set({ mutating: true });
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/worktree`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      await get().fetchBootstrap();
+      set({ mutating: false, notice: '工作树已删除（分支保留作审计证据）。' });
+    } catch (err) {
+      set({
+        mutating: false,
+        error: err instanceof Error ? err.message : '删除工作树失败',
       });
     }
   },

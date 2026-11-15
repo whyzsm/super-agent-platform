@@ -7,20 +7,9 @@ import path from 'node:path';
 import type { AssetAclEntry, MemoryAsset } from '../protocol';
 import { createAuditLog } from './audit';
 import { createLocalIdentityProvider } from './localProvider';
-import { assertAllowed, canAccessAsset, isAllowed } from './rbac';
+import { ALL_ACTIONS, assertAllowed, canAccessAsset, isAllowed } from './rbac';
 import { ForbiddenError } from './types';
 import type { Action, AuditEntry, Principal } from './types';
-
-const ALL_ACTIONS: Action[] = [
-  'read',
-  'requirement:create',
-  'task:advance',
-  'task:gate',
-  'memory:approve',
-  'teamai:write',
-  'runtime:spawn',
-  'runtime:events',
-];
 
 function principal(overrides: Partial<Principal> = {}): Principal {
   return {
@@ -179,10 +168,38 @@ test('rbac: reviewer 权限矩阵逐项（viewer + gate/approve/teamai，不含 
   assert.equal(isAllowed(p, 'runtime:spawn'), false);
 });
 
-test('rbac: admin 权限矩阵（全部 8 个 Action 放行）', () => {
+test('rbac: admin 权限矩阵（全部 Action 放行）', () => {
   const p = principal({ roles: ['admin'] });
   for (const action of ALL_ACTIONS) {
     assert.equal(isAllowed(p, action), true, `admin / ${action}`);
+  }
+});
+
+test('rbac: admin:reset 是 admin 独占，developer / reviewer 均不得重置平台', () => {
+  for (const role of ['developer', 'reviewer', 'viewer'] as const) {
+    assert.equal(
+      isAllowed(principal({ roles: [role] }), 'admin:reset'),
+      false,
+      `${role} 不得执行 admin:reset`,
+    );
+  }
+  // 多角色叠加也不能拼出 admin:reset（它不是角色并集的产物）。
+  assert.equal(
+    isAllowed(principal({ roles: ['developer', 'reviewer', 'viewer'] }), 'admin:reset'),
+    false,
+  );
+  assert.equal(isAllowed(principal({ roles: ['admin'] }), 'admin:reset'), true);
+});
+
+test('rbac: 动作全集与角色矩阵覆盖一致（新增 Action 必须被至少一个角色放行）', () => {
+  for (const action of ALL_ACTIONS) {
+    const holders = (['viewer', 'developer', 'reviewer', 'admin'] as const).filter((role) =>
+      isAllowed(principal({ roles: [role] }), action),
+    );
+    assert.ok(
+      holders.length > 0,
+      `Action ${action} 没有任何角色可执行，矩阵与全集已漂移`,
+    );
   }
 });
 

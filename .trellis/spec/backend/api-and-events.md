@@ -35,7 +35,9 @@
 ## 当前实现状态（演示态）
 
 - 事件全部来自手工端点或注入：`/advance` 自行构造 `verifierChecks`（`passed: true`），`/simulate-failure`、`/simulate-danger` 注入假失败 / 假高危命令；没有真实 CLI spawn，也没有 LLM 调用。
-- `/api/mcp/recall` 是普通 HTTP POST（内部调 `recallMemoryAssets()`），**不是 MCP server**；`/api/daemons/:machineId/replay` 只是把 `lastAckSeq` 加上一个模拟条数。
+- `/api/mcp` 是**标准 MCP JSON-RPC 2.0 端点**（`src/mcp/server.ts`：`initialize` / `tools/list` / `tools/call` / `ping`），stdio 桥见 `scripts/mcp-stdio.mjs`；`/api/mcp/recall` 仅作旧 HTTP 调用方兼容，不得再被描述为 MCP server。详见 [mcp-server.md](./mcp-server.md)。
+- `/api/tasks/:id/worktree`（`POST`/`DELETE`）与 `/api/workspaces` 是**真实 `git worktree` 建删**，`worktreePath` 会被替换成落盘的绝对路径。详见 [workspace-worktree.md](./workspace-worktree.md)。
+- `/api/daemons/:machineId/replay` 仍只是把 `lastAckSeq` 加上一个模拟条数。
 - 没有日志库、没有日志级别、没有结构化日志字段；仅少量 `console.log` 调度打印（如 `server.ts:128`、`:1152`）。
 
 ## 常见错误
@@ -46,4 +48,4 @@
 
 ## 验证
 
-`npm run lint`（`tsc --noEmit`）与 `npm test`（`node --import tsx --test`，14 个 `node:test` 用例全绿）。
+`npm run lint`（`tsc --noEmit`）与 `npm test`（`node --import tsx --test`，136 个 `node:test` 用例全绿）。

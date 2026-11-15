@@ -210,7 +210,7 @@ export function DagCanvas({
       selectedTask.state === 'VERIFYING');
 
   return (
-    <main className="flex-1 min-w-0 min-h-[400px] lg:min-h-0 shrink-0 lg:shrink bg-slate-50 flex flex-col">
+    <main className="flex-1 min-w-0 min-h-[400px] lg:min-h-0 shrink-0 lg:shrink max-h-[65vh] lg:max-h-none bg-slate-50 flex flex-col">
       <div className="bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-[11px] font-mono text-slate-500 truncate">

@@ -1,3 +1,6 @@
+// 必须先于任何模块顶层 process.env 读取执行：ESM import 提升保证 .env 先于下面
+// 的 IM_WEBHOOK_SECRET / SUPERAGENT_* 读取生效。.env 不存在时 dotenv 静默跳过。
+import 'dotenv/config';
 import express, { type Response } from 'express';
 import { createServer as createViteServer } from 'vite';
 import fs from 'node:fs';
@@ -49,6 +52,13 @@ import { createCommandBus } from './src/loop/commandBus';
 import type { LoopCommandKind } from './src/loop/commandBus';
 import { applyResourceTransition, deriveRetrospective } from './src/loop/taskLifecycle';
 import type { ResourceKind } from './src/loop/taskLifecycle';
+import {
+  createWorktree,
+  listWorktrees,
+  removeWorktree,
+} from './src/workspace/worktreeManager';
+import { handleMcpMessage, MCP_PROTOCOL_VERSION } from './src/mcp/server';
+import type { McpContext } from './src/mcp/server';
 
 const PORT = 3000;
 const STATE_FILE = path.resolve(process.cwd(), '.superagent-state.json');
@@ -70,10 +80,19 @@ if (!IM_WEBHOOK_SECRET) {
   );
 }
 
-function syncTeamAiFileToDisk(relPath: string, content: string): void {
+/**
+ * 把 Team AI 资产写到磁盘。
+ *
+ * overwrite=false 时只补建缺失文件、不覆写已存在文件 —— 用于 reset / 种子初始化：
+ * `.teamai/` 下是人工维护并随仓库提交的团队资产，无条件覆写会让演示数据
+ * 覆盖真实配置（历史上曾用 pnpm 命令覆盖掉本仓库正确的 npm hook）。
+ * 显式编辑（PUT /api/teamai、固化 SOP、审批记忆）才用 overwrite=true。
+ */
+function syncTeamAiFileToDisk(relPath: string, content: string, overwrite = true): void {
   if (!relPath.startsWith('.teamai/')) return;
   try {
     const absPath = path.resolve(process.cwd(), relPath);
+    if (!overwrite && fs.existsSync(absPath)) return;
     fs.mkdirSync(path.dirname(absPath), { recursive: true });
     fs.writeFileSync(absPath, content, 'utf-8');
   } catch {
@@ -193,29 +212,68 @@ async function startServer() {
   // ---- 团队化协作：本地身份 / RBAC / 不可变审计 / 幂等命令 ----
   // dev adapter：loopback 且未携带身份头时注入本地管理员，保证开箱可用；
   // 非 loopback 且无身份头 → 匿名 viewer，写操作一律 403。生产换 OIDC adapter 即可。
-  const WRITE_ACTION: Array<[RegExp, Action]> = [
-    [/^\/api\/requirements$/, 'requirement:create'],
-    [/^\/api\/tasks\/[^/]+\/gate$/, 'task:gate'],
-    [/^\/api\/tasks\/[^/]+\/real-spawn$/, 'runtime:spawn'],
-    [/^\/api\/memories\/[^/]+\/approve$/, 'memory:approve'],
-    [/^\/api\/teamai$/, 'teamai:write'],
+  // 显式动作表：每条路由登记它需要的 Action，避免「未分类写操作默认落到 task:advance」
+  // 造成的权限漂移（历史上 /api/mcp/recall 因此要求写权限、/api/reset 任意开发者可调）。
+  // 写操作未登记时 fail-closed（403 + 审计 denied），新增端点必须在此登记。
+  const ROUTE_ACTIONS: Array<[method: string, re: RegExp, action: Action]> = [
+    ['GET', /^\/api\/(health|bootstrap|stream)$/, 'read'],
+    ['GET', /^\/api\/runtime\/(audit|commands)$/, 'read'],
+    ['GET', /^\/api\/runtime\/events$/, 'runtime:events'],
+    ['GET', /^\/api\/webhooks\/im\/card\/[^/]+$/, 'read'],
+    ['POST', /^\/api\/requirements$/, 'requirement:create'],
+    ['POST', /^\/api\/requirements\/[^/]+\/solidify-sop$/, 'teamai:write'],
+    ['POST', /^\/api\/tasks\/[^/]+\/advance$/, 'task:advance'],
+    ['POST', /^\/api\/tasks\/[^/]+\/input$/, 'task:advance'],
+    ['POST', /^\/api\/tasks\/[^/]+\/comments$/, 'task:advance'],
+    ['POST', /^\/api\/tasks\/[^/]+\/resource-transition$/, 'task:advance'],
+    ['POST', /^\/api\/tasks\/[^/]+\/simulate-(failure|danger)$/, 'task:advance'],
+    ['POST', /^\/api\/tasks\/[^/]+\/gate$/, 'task:gate'],
+    ['POST', /^\/api\/tasks\/[^/]+\/retrospective$/, 'read'],
+    ['POST', /^\/api\/tasks\/[^/]+\/real-spawn$/, 'runtime:spawn'],
+    ['POST', /^\/api\/tasks\/[^/]+\/ndjson$/, 'runtime:spawn'],
+    ['POST', /^\/api\/daemons\/[^/]+\/replay$/, 'runtime:spawn'],
+    ['POST', /^\/api\/mcp$/, 'read'],
+    ['POST', /^\/api\/mcp\/recall$/, 'read'],
+    ['POST', /^\/api\/memories\/[^/]+\/(approve|reject)$/, 'memory:approve'],
+    ['POST', /^\/api\/teamai$/, 'teamai:write'],
+    ['PUT', /^\/api\/teamai$/, 'teamai:write'],
+    ['POST', /^\/api\/tasks\/[^/]+\/worktree$/, 'runtime:spawn'],
+    ['DELETE', /^\/api\/tasks\/[^/]+\/worktree$/, 'runtime:spawn'],
+    ['POST', /^\/api\/reset$/, 'admin:reset'],
   ];
-  function actionFor(method: string, url: string): Action | null {
-    if (url.startsWith('/api/webhooks/')) return null; // IM 回调走 HMAC 验签，豁免 RBAC
-    if (method === 'GET') {
-      // 运行事件含内部轨迹，即使是 GET 也要求 viewer 及以上（匿名仅 read）。
-      return url === '/api/runtime/events' ? 'runtime:events' : 'read';
+  function actionFor(method: string, url: string): Action | 'exempt' | null {
+    // IM 回调由 HMAC-SHA256 + 300s 防重放独立鉴权，豁免 RBAC。
+    if (method === 'POST' && url === '/api/webhooks/im') return 'exempt';
+    for (const [m, re, action] of ROUTE_ACTIONS) {
+      if (m === method && re.test(url)) return action;
     }
-    for (const [re, action] of WRITE_ACTION) if (re.test(url)) return action;
-    return 'task:advance';
+    // 只读方法兜底为 read（不扩大权限面）；写方法未登记则返回 null（调用方 fail-closed）。
+    return method === 'GET' ? 'read' : null;
   }
   app.use((req, res, next) => {
     const url = req.path;
     if (!url.startsWith('/api/')) return next();
     const action = actionFor(req.method, url);
-    if (!action) return next();
+    if (action === 'exempt') return next();
 
     const headers = { ...req.headers } as Record<string, string | string[] | undefined>;
+    if (action === null) {
+      // 写操作未登记动作 → fail-closed，避免新增端点默认继承过宽的权限。
+      const denied = identityProvider.resolve(headers);
+      auditLog.record({
+        userId: denied.userId,
+        teamId: denied.teamId,
+        action: 'read',
+        target: `${req.method} ${url}`,
+        outcome: 'denied',
+        detail: 'unclassified write route',
+      });
+      res.status(403).json({
+        error: `Forbidden: 路由未登记动作，拒绝执行 ${req.method} ${url}`,
+      });
+      return;
+    }
+
     const hasIdentity = Object.keys(headers).some((k) => k.startsWith('x-superagent-'));
     const remote = req.socket.remoteAddress ?? '';
     const loopback =
@@ -1401,6 +1459,34 @@ ${stepLines}
     });
   });
 
+  // ---- MCP（Model Context Protocol）标准端点 ----
+  // JSON-RPC 2.0：initialize / tools/list / tools/call / ping。
+  // 依赖注入到 mcpContext，state 被 reset 时闭包仍指向最新对象。
+  const mcpContext: McpContext = {
+    recall: (query, caller, limit) => recallMemoryAssets(state.memories, query, caller, limit),
+    getTask: (id) => state.tasks.find((t) => t.id === id),
+    listTasks: () => state.tasks,
+    countDrafts: () => state.memories.filter((m) => m.status === 'draft').length,
+  };
+
+  app.post('/api/mcp', (req, res) => {
+    const result = handleMcpMessage(req.body, mcpContext);
+    // 纯通知（如 notifications/initialized）按 JSON-RPC 规范回 202 无内容。
+    if (result === null) {
+      res.status(202).end();
+      return;
+    }
+    res.setHeader('MCP-Protocol-Version', MCP_PROTOCOL_VERSION);
+    res.json(result);
+  });
+
+  app.get('/api/mcp', (_req, res) => {
+    // Streamable HTTP 的 GET 用于服务端主动推送；本服务无服务端推送通道，按规范回 405。
+    res.setHeader('Allow', 'POST');
+    res.status(405).json({ error: '本服务仅支持 POST /api/mcp（无服务端推送通道）' });
+  });
+
+  // 兼容旧调用方：普通 HTTP 召回接口保留，但不再是 MCP 协议入口（见上方 /api/mcp）。
   app.post('/api/mcp/recall', (req, res) => {
     const { query, caller, limit } = req.body as {
       query?: string;
@@ -1544,7 +1630,11 @@ ${stepLines}
       'WAIT_APPROVAL', 'APPROVE', 'CANCEL',
     ];
     if (typeof body.kind !== 'string' || !allowedKinds.includes(body.kind as ResourceKind)) {
-      res.status(400).json({ error: `非法 kind，允许: ${allowedKinds.join(' / ')}` });
+      res.status(400).json({
+        error: `非法 kind，允许: ${allowedKinds.join(' / ')}`,
+        from: task.state,
+        to: null,
+      });
       return;
     }
     const commandId =
@@ -1566,7 +1656,13 @@ ${stepLines}
     const outcome = applyResourceTransition(task, body.kind as ResourceKind);
     if (!outcome.ok) {
       // 命令已入 append-only 日志，这是审计事实，不回滚日志。
-      res.status(400).json({ error: outcome.reason, task });
+      // 回带 from/to：客户端需知道被状态机拒绝的是哪条迁移，否则只能猜。
+      res.status(400).json({
+        error: outcome.reason,
+        from: outcome.from,
+        to: outcome.to,
+        task: outcome.node,
+      });
       return;
     }
     const idx = state.tasks.findIndex((t) => t.id === task.id);
@@ -1595,10 +1691,92 @@ ${stepLines}
     });
   });
 
+  // ---- M14 Workspace Manager：真实 git worktree（不再是字符串占位）----
+  // 建/删都在真实文件系统落盘；失败如实返回 code，不假装成功。
+  const worktreeRoot = process.env.SUPERAGENT_WORKTREE_ROOT
+    ? path.resolve(process.env.SUPERAGENT_WORKTREE_ROOT)
+    : path.join(process.cwd(), '.worktrees');
+
+  app.get('/api/workspaces', (_req, res) => {
+    const listed = listWorktrees(process.cwd(), worktreeRoot);
+    if (!listed.ok) {
+      res.status(listed.code === 'not_a_git_repo' ? 409 : 500).json({
+        error: listed.message,
+        code: listed.code,
+        root: worktreeRoot,
+      });
+      return;
+    }
+    res.json({ root: worktreeRoot, worktrees: listed.value });
+  });
+
+  app.post('/api/tasks/:id/worktree', (req, res) => {
+    const task = state.tasks.find((t) => t.id === req.params.id);
+    if (!task) {
+      res.status(404).json({ error: '任务节点不存在' });
+      return;
+    }
+    const requirement = state.requirements.find((r) => r.id === task.reqId);
+    const rawBaseRef = (req.body as { baseRef?: unknown })?.baseRef;
+    const baseRef =
+      typeof rawBaseRef === 'string' && rawBaseRef.trim()
+        ? rawBaseRef.trim()
+        : requirement?.baseBranch || 'main';
+
+    const created = createWorktree({
+      repoRoot: process.cwd(),
+      root: worktreeRoot,
+      taskId: task.id,
+      baseRef,
+      branch: task.worktreeBranch || `agent/${task.id}`,
+    });
+    if (!created.ok) {
+      const status = created.code === 'not_a_git_repo' || created.code === 'git_unavailable' ? 409 : 400;
+      res.status(status).json({ error: created.message, code: created.code });
+      return;
+    }
+
+    // 把占位字符串换成真实绝对路径，前端与后续 real-spawn 都用这一份事实。
+    task.worktreePath = created.value.path;
+    task.terminalLines.push(
+      `[workspace] git worktree ready: ${created.value.path} (branch=${created.value.branch} base=${created.value.baseRef})`,
+    );
+    saveState(state);
+    res.status(201).json({ worktree: created.value, task });
+  });
+
+  app.delete('/api/tasks/:id/worktree', (req, res) => {
+    const task = state.tasks.find((t) => t.id === req.params.id);
+    if (!task) {
+      res.status(404).json({ error: '任务节点不存在' });
+      return;
+    }
+    const body = (req.body ?? {}) as { deleteBranch?: unknown };
+    const deleteBranch = req.query.deleteBranch === 'true' || body.deleteBranch === true;
+
+    const removed = removeWorktree({
+      repoRoot: process.cwd(),
+      root: worktreeRoot,
+      taskId: task.id,
+      deleteBranch,
+    });
+    if (!removed.ok) {
+      const status = removed.code === 'not_found' ? 404 : removed.code === 'not_a_git_repo' ? 409 : 500;
+      res.status(status).json({ error: removed.message, code: removed.code });
+      return;
+    }
+    task.terminalLines.push(`[workspace] git worktree removed: ${removed.value.path}`);
+    // 路径已不存在，保留旧值会让 UI 指向已删除目录；清空后前端回退显示分支名。
+    task.worktreePath = undefined;
+    saveState(state);
+    res.json({ removed: removed.value, task });
+  });
+
   app.post('/api/reset', (_req, res) => {
     state = createInitialSeedState();
     for (const asset of state.teamAiAssets) {
-      syncTeamAiFileToDisk(asset.path, asset.content);
+      // 只补建缺失文件：`reset` 是重置内存状态，不应顺手覆写仓库里人工维护的团队资产。
+      syncTeamAiFileToDisk(asset.path, asset.content, false);
     }
     saveState(state);
     res.json(state);
@@ -1622,6 +1800,30 @@ ${stepLines}
     });
   }, 8000);
   timer.unref?.();
+
+  // JSON-RPC 错误边界：express.json() 解析失败时默认抛 SyntaxError 并返回 HTML 错误页，
+  // 这对 MCP 客户端是协议违规（它期待 JSON-RPC 帧）。此处把 /api/mcp 的解析失败
+  // 转成标准 -32700 响应，其余路径仍走默认处理。
+  app.use(
+    (
+      err: unknown,
+      req: express.Request,
+      res: Response,
+      next: express.NextFunction,
+    ) => {
+      const isBodyParseError =
+        err instanceof SyntaxError && typeof err === 'object' && err !== null && 'body' in err;
+      if (isBodyParseError && req.path.startsWith('/api/mcp')) {
+        res.status(400).json({
+          jsonrpc: '2.0',
+          id: null,
+          error: { code: -32700, message: 'Parse error: 报文不是合法 JSON' },
+        });
+        return;
+      }
+      next(err);
+    },
+  );
 
   if (process.env.NODE_ENV === 'production') {
     const distDir = path.resolve(process.cwd(), 'dist');
