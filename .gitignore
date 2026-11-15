@@ -14,5 +14,13 @@ coverage/
 .claude/
 .cursor/
 .workbuddy/
-.trellis/
 .superagent-events.jsonl
+
+# Trellis：共享规范、工作流、配置与运行时脚本；本地运行数据仍排除
+.trellis/*
+!.trellis/spec/
+!.trellis/workflow.md
+!.trellis/config.yaml
+!.trellis/scripts/
+!.trellis/agents/
+!.trellis/.gitignore
