@@ -1,4 +1,4 @@
-import { appendRuntimeEvent } from './eventLog';
+import { appendRuntimeEvent, type EventLog } from './eventLog';
 import { runRealVerifier } from './verifier';
 import type { DagNode, VerifierCheck } from '../protocol';
 
@@ -28,10 +28,12 @@ export interface RealVerificationOutcome {
 export function runRealVerification(
   task: DagNode,
   repoRoot: string = process.cwd(),
+  eventLog?: EventLog,
 ): RealVerificationOutcome {
   const traceId = `verify-${task.id}-${Date.now()}`;
   const result = runRealVerifier(repoRoot);
-  appendRuntimeEvent({
+  const log = eventLog ?? { append: appendRuntimeEvent };
+  log.append({
     traceId,
     type: 'VERIFY_RESULT',
     taskId: task.id,
@@ -45,8 +47,9 @@ export function recordStateTransition(
   from: string,
   to: string,
   traceId?: string,
+  eventLog?: EventLog,
 ): void {
-  appendRuntimeEvent({
+  (eventLog ?? { append: appendRuntimeEvent }).append({
     traceId: traceId ?? `run-${task.id}`,
     type: 'STATE_TRANSITION',
     taskId: task.id,

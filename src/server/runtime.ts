@@ -1,5 +1,4 @@
 import type { Express } from 'express';
-import { appendRuntimeEvent, lastEventSeq, replayRuntimeEvents } from '../runtime/eventLog';
 import { createHeadlessJsonAdapter } from '../runtime/adapters/headlessJson';
 import { isRealRuntimeEnabled } from '../runtime/realRuntime';
 import type { AgentReasoningEvent } from '../protocol';
@@ -10,7 +9,7 @@ import type { ServerContext } from './context';
  * real-spawn 强制要求显式 SUPERAGENT_CLI_COMMAND，不会默认发起模型调用。
  */
 export function registerRuntimeRoutes(app: Express, ctx: ServerContext): void {
-  const { state, seq, saveState, broadcastEnvelope, repoRoot, auditLog, store } = ctx;
+  const { state, seq, saveState, broadcastEnvelope, repoRoot, auditLog, store, eventLog } = ctx;
 
   // 真实运行时受控端点：默认关闭，且必须显式配置 CLI 命令，避免误触发模型调用。
   app.post('/api/tasks/:id/real-spawn', (req, res) => {
@@ -33,7 +32,7 @@ export function registerRuntimeRoutes(app: Express, ctx: ServerContext): void {
     const adapter = createHeadlessJsonAdapter({ provider: task.provider });
     const traceId = `spawn-${task.id}-${Date.now()}`;
     let received = 0;
-    appendRuntimeEvent({
+    eventLog.append({
       traceId,
       type: 'SPAWN',
       taskId: task.id,
@@ -42,7 +41,7 @@ export function registerRuntimeRoutes(app: Express, ctx: ServerContext): void {
 
     adapter.onEvent((event) => {
       received += 1;
-      appendRuntimeEvent({
+      eventLog.append({
         traceId,
         type: 'AGENT_EVENT',
         taskId: task.id,
@@ -104,8 +103,8 @@ export function registerRuntimeRoutes(app: Express, ctx: ServerContext): void {
     const traceId =
       typeof req.query.traceId === 'string' ? req.query.traceId : undefined;
     res.json({
-      events: replayRuntimeEvents(traceId),
-      lastSeq: lastEventSeq(),
+      events: eventLog.replay(traceId),
+      lastSeq: eventLog.lastSeq(),
     });
   });
 

@@ -5,6 +5,7 @@ import type {
 } from '../protocol';
 import { canTransition, extractSkillDraft } from '../engine/stateMachine';
 import { recordStateTransition } from '../runtime/realRuntime';
+import type { EventLog } from '../runtime/eventLog';
 
 export type ResourceKind =
   | 'BLOCK_RESOURCE'
@@ -50,6 +51,7 @@ const REVIEW_REASON =
 export function applyResourceTransition(
   node: DagNode,
   kind: ResourceKind,
+  eventLog?: EventLog,
 ): { node: DagNode; ok: boolean; from: TaskState; to: TaskState; reason: string } {
   const from = node.state;
 
@@ -103,7 +105,7 @@ export function applyResourceTransition(
   };
 
   // 旁路 append-only 事件，仅作证据，不参与状态决策。
-  recordStateTransition(newNode, from, to);
+  recordStateTransition(newNode, from, to, undefined, eventLog);
 
   return {
     node: newNode,

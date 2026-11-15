@@ -84,7 +84,7 @@ function maybeAutoReleaseGate(ctx: ServerContext, task: DagNode): void {
 
 /** 任务域路由：advance / simulate / gate / ndjson / input / comments / resource-transition / retrospective。 */
 export function registerTaskRoutes(app: Express, ctx: ServerContext): void {
-  const { state, seq, saveState, broadcastEnvelope, recomputeRequirementStatus, commandBus, repoRoot } = ctx;
+  const { state, seq, saveState, broadcastEnvelope, recomputeRequirementStatus, commandBus, repoRoot, eventLog } = ctx;
 
   app.post('/api/tasks/:id/advance', (req, res) => {
     const task = state.current.tasks.find((t) => t.id === req.params.id);
@@ -170,11 +170,11 @@ export function registerTaskRoutes(app: Express, ctx: ServerContext): void {
         let verifyLogs = 'lint / typecheck / unit_test / cross_review 全部通过。';
 
         if (isRealRuntimeEnabled()) {
-          const real = runRealVerification(task, repoRoot);
+          const real = runRealVerification(task, repoRoot, eventLog);
           checks = real.checks;
           verifyPassed = real.passed;
           verifyLogs = real.logs.trim() || '确定性门禁未产生输出';
-          recordStateTransition(task, 'RUNNING', 'VERIFYING', real.traceId);
+          recordStateTransition(task, 'RUNNING', 'VERIFYING', real.traceId, eventLog);
           task.terminalLines.push(
             `[real-verifier] ${verifyPassed ? 'PASS' : 'FAIL'} (${real.traceId})`,
           );
@@ -603,7 +603,7 @@ export function registerTaskRoutes(app: Express, ctx: ServerContext): void {
       });
       return;
     }
-    const outcome = applyResourceTransition(task, body.kind as ResourceKind);
+    const outcome = applyResourceTransition(task, body.kind as ResourceKind, eventLog);
     if (!outcome.ok) {
       // 命令已入 append-only 日志，这是审计事实，不回滚日志。
       // 回带 from/to：客户端需知道被状态机拒绝的是哪条迁移，否则只能猜。

@@ -8,11 +8,11 @@ import type { LoopCommand, LoopCommandKind, SubmittedCommand } from './commandBu
 import type { ResourceKind } from './taskLifecycle';
 
 // ---------------------------------------------------------------------------
-// 沙箱：realRuntime.recordStateTransition -> eventLog.appendRuntimeEvent 的
-// EVENT_FILE 是模块顶层基于 process.cwd() 算出的绝对路径常量，append 不接受路径参数。
-// applyResourceTransition 合法时按要求必须调用它写旁路事件；为让该写入落到临时目录、
-// 绝不污染仓库根，必须在任何项目模块（尤其间接依赖 eventLog 的 taskLifecycle）被加载
-// 之前先把 cwd 切到临时目录，并且全程只用动态 import（静态 import 会被提升、抢跑）。
+// 沙箱（兼容路径守卫）：eventLog 已支持 createEventLog 工厂注入（ServerContext 用），
+// 但 realRuntime / taskLifecycle 在无请求上下文时仍走模块级默认单例（基于模块加载时
+// 的 process.cwd()）。本文件顺带守卫这条兼容路径：chdir 到临时目录后再动态 import，
+// 确保默认单例也落在临时目录、绝不污染仓库根。请求上下文内的注入路径由
+// src/runtime/eventLog.test.ts 与 src/server/http.test.ts 覆盖。
 // ---------------------------------------------------------------------------
 const REPO_ROOT = process.cwd();
 const REPO_EVENT_LOG = path.join(REPO_ROOT, '.superagent-events.jsonl');

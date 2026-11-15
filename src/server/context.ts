@@ -9,6 +9,7 @@ import { createLocalIdentityProvider } from '../identity/localProvider';
 import type { IdentityProvider, Principal } from '../identity/types';
 import { createAuditLog, type AuditLog } from '../identity/audit';
 import { createCommandBus, type LoopCommandKind } from '../loop/commandBus';
+import { createEventLog, type EventLog } from '../runtime/eventLog';
 import { parseGateTier, type GateApprovalTier, type GateTierConfig } from '../policy/gateTiers';
 import type { DaemonEnvelope } from '../protocol';
 
@@ -46,6 +47,9 @@ export interface ServerContext {
 
   /** Q8 门禁三挡配置；默认 always_confirm（与历史行为一致） */
   readonly gateTierConfig: GateTierConfig;
+
+  /** 运行轨迹旁路日志（.superagent-events.jsonl，落在 dataDir）；单进程单写者前提不变 */
+  readonly eventLog: EventLog;
 
   /** git 仓库根（worktree / verifier 的执行目录），测试可指向临时仓库 */
   readonly repoRoot: string;
@@ -122,6 +126,9 @@ export function createServerContext(options: ServerContextOptions = {}): ServerC
   const commandBus = createCommandBus({
     logPath: path.join(dataDir, '.superagent-loop.jsonl'),
   });
+  const eventLog = createEventLog({
+    path: path.join(dataDir, '.superagent-events.jsonl'),
+  });
 
   const imWebhookSecret = options.imWebhookSecret ?? process.env.IM_WEBHOOK_SECRET;
   const gateTierConfig: GateTierConfig = {
@@ -139,6 +146,7 @@ export function createServerContext(options: ServerContextOptions = {}): ServerC
     identityProvider,
     auditLog,
     commandBus,
+    eventLog,
     state,
     seq,
     sseClients,

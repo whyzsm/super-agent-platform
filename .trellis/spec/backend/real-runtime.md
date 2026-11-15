@@ -40,7 +40,7 @@
 - **真实模型 CLI 集成未验证**：`codex exec` 与 `claude -p --output-format stream-json` 的登录态、返回码、事件行结构未实测；验收用本地 `node -e` NDJSON 源做链路自检，不以模拟结果顶替真实调用。详见任务 `research/cli-probe.md`。
 - 依赖缺陷已修复：`esbuild` 升到 `^0.28.0`、`npm install` 无需 `--legacy-peer-deps`；新增 `npm test`（37 用例）。原 `bun.lock` 实为 npm lock v2，已归位为 `package-lock.json`（v3）；项目 `.gitignore` 用 `!package-lock.json` 覆盖了全局忽略规则。
 - 已修：状态改原子快照（临时文件 + rename）、`saveState()` 写失败 stderr 告警、默认 IM 密钥改 env 注入 + 503、`syncedToGit` 恒 false、`eventLog` seq 实时重算。仍为演示态：`worktreePath` 只是字符串、真实模型 CLI 登录态未实测。
-- `eventLog.ts` 的 `EVENT_FILE` 是基于 `process.cwd()` 的模块常量（S1-1 拆分后仍未改为可注入路径——除 runtime 域外其余状态/日志路径均已入 `createServerContext`，此项是遗留缺口）；`lastEventSeq` 每次真实扫描 max seq，但多进程并发写仍可能冲突，单进程单写者是前提。
+- ~~`eventLog.ts` 的 `EVENT_FILE` 是基于 `process.cwd()` 的模块常量~~ **已修复**（S1-1 遗留缺口，2026-11-16）：`createEventLog({ path })` 工厂注入，`ServerContext.eventLog` 绑定 dataDir 下的 `.superagent-events.jsonl`（生产默认仍是 cwd，行为不变）；模块级默认单例 + 旧命名导出保留给无请求上下文的调用方（realRuntime / taskLifecycle），`loop.test.ts` 的 chdir 沙箱继续守卫这条兼容路径。多进程并发写仍需文件锁或换生产 adapter，单进程单写者前提不变。
 - 未建 worktree：`real-spawn` 的 cwd 固定为仓库根，不是 `worktreePath` 字符串指向的目录。
 
 ## 常见错误

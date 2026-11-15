@@ -88,6 +88,13 @@
 - 理由：敏感度评估为低（演示字符串）；破坏性评估为高（共享远端历史）。运行态文件已 gitignore，新增提交不再引入。
 - 影响与遗留：若未来确认历史中存在真实密钥，再立独立任务处理（届时用 filter-repo + 全员协同），本条不构成「已清理」的结论。
 
+## D-2026-11-16-10 eventLog 工厂化与兼容单例并存
+
+- 背景：`EVENT_FILE` 是模块级 cwd 常量，append/replay 不收路径参数；测试被迫用 chdir + 动态 import 绕开（eventLog.test.ts 与 loop.test.ts 各有一套沙箱 hack），real-runtime.md 记为 S1-1 遗留缺口。
+- 决策：`createEventLog({ path })` 工厂（与 store/audit/commandBus 同款端口形态）+ `ServerContext.eventLog`（绑 dataDir，生产默认 cwd，行为不变）；realRuntime / taskLifecycle 的函数加**可选** `eventLog?` 参数（缺省走模块级默认单例，旧命名导出保留）。请求上下文（server/tasks.ts advance、server/runtime.ts 路由）一律传 ctx.eventLog。
+- 理由：taskLifecycle 在无请求上下文（未来 daemon 消费者）下也要能写旁路事件，强签名注入会传染所有调用链；可选参数 + 默认单例保持兼容且把注入路径收敛到服务端。loop.test.ts 的 chdir 沙箱从「被迫的 hack」转为「兼容路径的守卫」，保留。
+- 影响：eventLog.test.ts 摆脱 chdir hack（9→6 用例，工厂直测 + 外部追加 seq 接续 + 损坏行容忍）；冒烟 57-57，verifier 旁路事件仍落仓库根日志（实测确认）。
+
 ## D-2026-11-16-03 S1-1 拆分形态（补记，上轮已按此执行）
 
 - 决策：`server.ts` 拆为启动引导 + `src/server/` 9 个域模块；共享闭包收敛为 `ServerContext`（`state`/`seq` 盒子）；handler verbatim 迁移，不趁机混入 S3-2 模板注册表。
