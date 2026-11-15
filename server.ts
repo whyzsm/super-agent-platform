@@ -5,6 +5,8 @@ import path from 'node:path';
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import { createServerContext } from './src/server/context';
+import { createPostgresStateStore } from './src/store/postgresStateStore';
+import type { StateStore } from './src/store/types';
 import { createApp } from './src/server/app';
 
 /**
@@ -16,7 +18,18 @@ import { createApp } from './src/server/app';
 const PORT = 3000;
 
 async function startServer() {
-  const ctx = createServerContext();
+  // S1-2：设置 SUPERAGENT_PG_CMD 即把 StateStore 换成 Postgres
+  // （psql 调用前缀，whitespace 切分；如 'docker exec -i superagent-pg psql -U superagent -d superagent'）。
+  // 缺省维持本地文件实现，两种后端零行为差异（同一 StateStore 契约）。
+  let stateStore: StateStore | undefined;
+  const pgCmd = process.env.SUPERAGENT_PG_CMD?.trim();
+  if (pgCmd) {
+    const pgStore = createPostgresStateStore({ command: pgCmd.split(/\s+/) });
+    pgStore.init();
+    stateStore = pgStore;
+    console.log('[SuperAgent] StateStore = Postgres (SUPERAGENT_PG_CMD 已配置)');
+  }
+  const ctx = createServerContext(stateStore ? { stateStore } : {});
 
   if (!ctx.imWebhookSecret) {
     console.warn(

@@ -12,7 +12,7 @@
 
 | 端口 | 本地默认实现 | 生产 adapter | 关键符号 |
 | --- | --- | --- | --- |
-| `StateStore` | `src/store/fileStateStore.ts` | Postgres（S1-2） | `createFileStateStore({statePath,logPath})`、`save/load/appendCommand/replayCommands` |
+| `StateStore` | `src/store/fileStateStore.ts`；**Postgres 已落地**（`src/store/postgresStateStore.ts`，`SUPERAGENT_PG_CMD` 启用，S1-2/D-13） | node-postgres 异步实现（需契约异步化） | `createFileStateStore({statePath,logPath})`、`createPostgresStateStore({command,tablePrefix})`、`save/load/appendCommand/replayCommands` |
 | `IdentityProvider` | `src/identity/localProvider.ts` | OIDC/SSO（S2-1） | `createLocalIdentityProvider()`、`resolve(headers)` |
 | `CommandBus` | `src/loop/commandBus.ts` | Temporal（S3-1） | `createCommandBus({logPath})`、`submit/list/lastSeq` |
 

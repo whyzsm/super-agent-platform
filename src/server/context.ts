@@ -80,6 +80,11 @@ export interface ServerContextOptions {
   initialState?: PlatformState;
   /** Q8 门禁三挡；缺省解析 SUPERAGENT_GATE_TIER（非法值 fail-safe 到 always_confirm） */
   gateTier?: GateApprovalTier;
+  /**
+   * 外置 StateStore 注入（S1-2：PostgresStateStore 等）。缺省文件实现。
+   * 注意：注入方负责先调一次 init()（建表）。
+   */
+  stateStore?: StateStore;
 }
 
 function loadOrInitState(store: StateStore, statePath: string): PlatformState {
@@ -117,10 +122,13 @@ export function createServerContext(options: ServerContextOptions = {}): ServerC
 
   // Ports & Adapters：业务只依赖接口。生产把 StateStore 换 Postgres、
   // IdentityProvider 换 OIDC、CommandBus 换 Temporal，流程代码不动。
-  const store = createFileStateStore({
-    statePath: path.join(dataDir, '.superagent-state.json'),
-    logPath: path.join(dataDir, '.superagent-commands.jsonl'),
-  });
+  // S1-2：StateStore 已有第二个真实实现（PostgresStateStore），经 options 注入。
+  const store: StateStore =
+    options.stateStore ??
+    createFileStateStore({
+      statePath: path.join(dataDir, '.superagent-state.json'),
+      logPath: path.join(dataDir, '.superagent-commands.jsonl'),
+    });
   const identityProvider = createLocalIdentityProvider();
   const auditLog = createAuditLog({ path: path.join(dataDir, '.superagent-audit.jsonl') });
   const commandBus = createCommandBus({

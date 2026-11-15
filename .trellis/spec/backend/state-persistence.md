@@ -8,6 +8,14 @@
 
 任何读取 / 修改模块级 `state: PlatformState`、给 `PlatformState` 新增字段、或改动 `/api/reset` 的地方。
 
+## 双后端（S1-2 起）
+
+- **文件实现（默认）**：`src/store/fileStateStore.ts`，同目录 tmp + rename 原子写。
+- **Postgres 实现**：`src/store/postgresStateStore.ts`（零 npm 依赖，经 psql 单语句桥接同步契约；dollar-quote 防注入；jsonb 拒非法 JSON；command_id 主键幂等）。启动引导设置 `SUPERAGENT_PG_CMD`（psql 调用前缀）即启用，建表 IF NOT EXISTS，缺省回落文件实现。
+- 本地 PG：`docker run -d --name superagent-pg -e POSTGRES_USER=superagent -e POSTGRES_PASSWORD=superagent-dev -e POSTGRES_DB=superagent -p 127.0.0.1:5433:5432 postgres:16-alpine`（决策 D-13；brew 的 postgresql@16/17/18 本机无 bottle）。
+- 两个实现共用同一契约测试语义；PG 契约测试在不可达环境整套 skip（不伪造）。
+- 边界：psql 进程桥接不适配高并发生产（spawn ~30ms/次、无连接复用）；生产换 node-postgres 并顺势异步化契约。
+
 ## 本地模式
 
 - 唯一数据源：`src/server/context.ts` 的 `createServerContext({ dataDir })` 把状态文件定为 `<dataDir>/.superagent-state.json`（默认 `process.cwd()`；HTTP 测试注入临时目录获得完全隔离）。

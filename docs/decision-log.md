@@ -117,6 +117,18 @@
 - 理由：聚合状态的语义是「需求此刻需要谁」；等人的状态归 AWAITING_GATE，等资源/重试的归进行中。
 - 影响：种子数据无 WAITING_APPROVAL 任务，存量行为不变；新增 2 条 HTTP 用例锁定两个方向；测试 263→265。
 
+## D-2026-11-16-13 S1-2 Postgres StateStore：psql 桥接 + 本地容器
+
+- 背景：S1-2 一直「本机无 PG」阻塞。brew 的 postgresql@16/17/18 在本机（macOS 14 arm64，2025-11-15 core tap）全部 **no bottle available**（formula 已弃权，源码构建明确不可行）；Docker Desktop 已装未运行。
+- 决策：
+  1. **PG 实例**：`open -a Docker` 启动 daemon（24.0.7）后 `docker run -d --name superagent-pg -e POSTGRES_USER=superagent -e POSTGRES_PASSWORD=superagent-dev -e POSTGRES_DB=superagent -p 127.0.0.1:5433:5432 postgres:16-alpine`（PG 16.15）。
+  2. **适配器形态**：`src/store/postgresStateStore.ts` **零 npm 依赖**——StateStore 契约是同步的，node-postgres 只有异步 API；为不重写全链路调用方，经 psql 命令行（spawnSync 参数数组，无 shell）执行**单条 SQL**。每次操作一个进程（~30ms），本地闭环规模够用。
+  3. **安全**：快照/命令内容用随机 tag 的 dollar-quote 包裹（任意 JSON 无法逃出字面量，注入面封死并有专门测试）；psql 前缀由运营者 env 提供；`ON_ERROR_STOP=1` 失败即抛，绝不静默。
+  4. **完整性**：快照列 jsonb（非法 JSON 在 DB 层被拒——文件实现「损坏 JSON 抛错」由类型系统保证）；结构校验（requirements/tasks 数组）仍在 load() 抛错；幂等靠 command_id 主键 + ON CONFLICT DO NOTHING。
+  5. **接线**：`createServerContext({ stateStore })` 注入；启动引导读 `SUPERAGENT_PG_CMD`（whitespace 切分的 psql 前缀）。缺省仍是文件实现，零行为差异。
+- 验证：契约测试 7 条（往返/结构无效抛错/幂等/注入/tablePrefix 隔离/不可达显式抛错；PG 不可达环境整套 skip 不伪造）；**PG 后端起服务跑冒烟 57-57**；冒烟后 PG 快照实测 3 需求/8 任务/1 命令。
+- 边界：psql 进程桥接不适合高并发生产（每次 spawn ~30ms + 无连接复用）——生产应换 node-postgres 异步实现并顺势把 StateStore 契约异步化；单写者前提与文件实现一致。
+
 ## D-2026-11-16-03 S1-1 拆分形态（补记，上轮已按此执行）
 
 - 决策：`server.ts` 拆为启动引导 + `src/server/` 9 个域模块；共享闭包收敛为 `ServerContext`（`state`/`seq` 盒子）；handler verbatim 迁移，不趁机混入 S3-2 模板注册表。
