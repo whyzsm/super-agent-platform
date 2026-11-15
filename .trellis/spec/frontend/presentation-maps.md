@@ -16,6 +16,7 @@
   - `PROVIDER_LABELS`（`:63`）：`Record<AgentProvider, string>`（Codex CLI / WorkBuddy / Claude Code / OpenCode）。
   - `ROLE_LABELS`（`:70`）：`Record<TaskRole, string>`（Planner / Builder / Reviewer）。
   - `SOP_TEMPLATE_LABELS`（`:76`）：`Record<SopTemplateId, string>`（标准 Feature 开发流 / Bug 修复流）。
+  - `NEEDS_ATTENTION_STATES` + `needsAttention()`（S1-1 后续章节）：「需要人工/调度器介入」的 5 态全集（HUMAN_GATE / WAITING_APPROVAL / RETRY_WAIT / BLOCKED_BY_RESOURCE / QUARANTINED），与后端 MCP `list_blocked_tasks` 的 NEEDS_ATTENTION 集合对齐。左侧队列「需介入」计数（`LeftQueuePane`）与 store 焦点任务选择（`useWorkspaceStore`）都用它，**不要在各处自拼 `state === 'HUMAN_GATE' || ...` 条件**——历史上正是这种写法让 3 个新态在计数里隐形。
 - 用 `Record<Union, ...>` 而非 `switch` / 字面量对象：新增枚举值时 `npm run lint`（`tsc --noEmit`）会因缺 key 直接报错，形成穷举性检查。
 - 消费方：`src/components/DagCanvas.tsx` 按 `TaskState` 取 `TASK_STATE_META` 的 `textClass` / `borderClass` / `bgClass` 拼接节点样式，并按状态选 lucide 图标（`:43–56`，均带 `aria-hidden="true"`）。
 - 类型键从 `import type { ... } from '../protocol'` 引入（`statusStyles.ts:1`），映射文件不自行定义枚举。

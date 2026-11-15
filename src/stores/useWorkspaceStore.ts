@@ -8,6 +8,7 @@ import type {
   SopTemplateId,
   TeamAiAsset,
 } from '../protocol';
+import { needsAttention } from '../utils/statusStyles';
 
 export type ActiveTab = 'workbench' | 'memory' | 'teamai' | 'daemons';
 
@@ -83,7 +84,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   selectRequirement: (reqId) => {
     const tasks = get().tasks.filter((t) => t.reqId === reqId);
-    const gateTask = tasks.find((t) => t.state === 'HUMAN_GATE' || t.state === 'ESCALATED');
+    const gateTask = tasks.find((t) => needsAttention(t.state));
     const firstTask = gateTask ?? tasks[0] ?? null;
     set({
       selectedReqId: reqId,
@@ -107,7 +108,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       const currentTaskId = get().selectedTaskId;
       const validTask =
         reqTasks.find((t) => t.id === currentTaskId) ??
-        reqTasks.find((t) => t.state === 'HUMAN_GATE' || t.state === 'ESCALATED') ??
+        reqTasks.find((t) => needsAttention(t.state)) ??
         reqTasks[0] ??
         null;
 

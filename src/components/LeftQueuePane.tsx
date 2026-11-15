@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Search, Server, ShieldAlert } from 'lucide-react';
 import type { DaemonRunner, DagNode, Requirement } from '../protocol';
+import { needsAttention } from '../utils/statusStyles';
 
 interface LeftQueuePaneProps {
   requirements: Requirement[];
@@ -34,7 +35,7 @@ export function LeftQueuePane({
   const gateCountByReq = useMemo(() => {
     const map = new Map<string, number>();
     for (const t of tasks) {
-      if (t.state === 'HUMAN_GATE' || t.state === 'ESCALATED') {
+      if (needsAttention(t.state)) {
         map.set(t.reqId, (map.get(t.reqId) ?? 0) + 1);
       }
     }
@@ -42,7 +43,7 @@ export function LeftQueuePane({
   }, [tasks]);
 
   const totalPendingGates = useMemo(
-    () => tasks.filter((t) => t.state === 'HUMAN_GATE' || t.state === 'ESCALATED').length,
+    () => tasks.filter((t) => needsAttention(t.state)).length,
     [tasks],
   );
 
@@ -69,7 +70,7 @@ export function LeftQueuePane({
           <h2 className="text-sm font-semibold text-slate-900">需求队列</h2>
           <span className="text-xs font-medium text-amber-700 tabular-nums flex items-center gap-1">
             <ShieldAlert className="w-3.5 h-3.5" aria-hidden="true" />
-            待审门禁 {totalPendingGates}
+            需介入 {totalPendingGates}
           </span>
         </div>
 
@@ -99,7 +100,7 @@ export function LeftQueuePane({
           {(
             [
               { id: 'all', label: '全部' },
-              { id: 'gate', label: '待审批' },
+              { id: 'gate', label: '需介入' },
               { id: 'active', label: '进行中' },
             ] as const
           ).map((item) => (

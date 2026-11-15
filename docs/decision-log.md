@@ -74,6 +74,13 @@
 - 理由：协议入口保持只读登记，任何 MCP 客户端都能握手与只读查询；写权限按工具粒度收紧到唯一权限矩阵（rbac.ts）。拒绝不升级为协议错误，客户端能看到可读的权限提示。
 - 影响：MCP 工具 3→4；冒烟 54→57 项；单测 247→254。
 
+## D-2026-11-16-08 前端「需介入」集合与后端对齐
+
+- 背景：handoff §8A 低优先级项「前端状态可视化补 3 态」。排查发现节点徽章（TASK_STATE_META + DagCanvas StateIcon）其实已覆盖 11 态；真正的缺口在聚合层——左侧队列「待审门禁」计数与 store 焦点任务选择只认 `HUMAN_GATE || ESCALATED`，导致 WAITING_APPROVAL / BLOCKED_BY_RESOURCE / QUARANTINED（以及 RETRY_WAIT）在计数里隐形。
+- 决策：`src/utils/statusStyles.ts` 新增 `NEEDS_ATTENTION_STATES`（5 态，与后端 MCP `list_blocked_tasks` 的 NEEDS_ATTENTION 完全一致）+ `needsAttention()`；`LeftQueuePane` 计数与 `useWorkspaceStore` 的两处焦点查找统一改用它；徽章与筛选文案从「待审门禁/待审批」改为「需介入」以匹配 widened 语义。
+- 理由：前后端各拼一份状态条件必然漂移（这次就是证据）；对齐到后端已固化的规范集合，前端只持有一份镜像。ESCALATED 不在集合内：它属于「熔断挂起」而非「可介入」——与后端定义一致。
+- 影响：`npm run build` 通过；后端无关（`recomputeRequirementStatus` 的 AWAITING_GATE 判定仍只认 HUMAN_GATE，保持后端行为不变）。
+
 ## D-2026-11-16-03 S1-1 拆分形态（补记，上轮已按此执行）
 
 - 决策：`server.ts` 拆为启动引导 + `src/server/` 9 个域模块；共享闭包收敛为 `ServerContext`（`state`/`seq` 盒子）；handler verbatim 迁移，不趁机混入 S3-2 模板注册表。

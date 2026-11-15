@@ -1,5 +1,23 @@
 import type { AgentProvider, GateType, SopTemplateId, TaskRole, TaskState } from '../protocol';
 
+/**
+ * 「需要人工/调度器介入」的状态全集（前端镜像）。
+ * 与后端 MCP list_blocked_tasks 的 NEEDS_ATTENTION 集合保持一致：
+ * HUMAN_GATE / WAITING_APPROVAL / RETRY_WAIT / BLOCKED_BY_RESOURCE / QUARANTINED。
+ * 队列「需介入」计数、焦点任务选择都用这一份，避免各处自拼条件漏掉新态。
+ */
+export const NEEDS_ATTENTION_STATES: readonly TaskState[] = [
+  'HUMAN_GATE',
+  'WAITING_APPROVAL',
+  'RETRY_WAIT',
+  'BLOCKED_BY_RESOURCE',
+  'QUARANTINED',
+];
+
+export function needsAttention(state: TaskState): boolean {
+  return NEEDS_ATTENTION_STATES.includes(state);
+}
+
 export const TASK_STATE_META: Record<
   TaskState,
   { label: string; textClass: string; borderClass: string; bgClass: string }
