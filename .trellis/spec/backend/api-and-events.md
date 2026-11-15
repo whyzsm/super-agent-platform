@@ -21,6 +21,7 @@
 - 事件归一化：`parseCliNdjsonLine()`（`src/daemon/ndjsonParser.ts:18`）先 `redactSecrets()` 脱敏再按 shell / command 规则拦截；`OfflineSeqQueue`（`:104`）提供 `enqueue`（按 seq 去重排序）、`ackUpTo`、`replayFrom`、`pendingCount`。
 - IM 回调：`signImWebhookPayload` / `verifyImWebhookPayload`（`src/gateway/imWebhook.ts:16 / :20`）用 HMAC-SHA256 + `timingSafeEqual` + 300 秒重放窗口，`buildImApprovalCard()`（`:53`）产出 wecom `template_card` / feishu `interactive`；`IM_WEBHOOK_SECRET` 只由 `process.env.IM_WEBHOOK_SECRET` 注入（`createServerContext` 读取）、无默认回退，缺失时 `GET /api/webhooks/im/card/:taskId` 与 `POST /api/webhooks/im` 返回 `503 { error: 'IM_WEBHOOK_SECRET is not configured' }`，并在服务启动日志一次性告警。
 - 共享事件 / 命令类型 `DaemonEnvelope`、`DaemonCommand`、`NormalizedAgentEvent` 只从 `src/protocol/index.ts` 引入。
+- 需求聚合状态映射（`src/server/context.ts` `recomputeRequirementStatus`，任何变更 handler 落盘前必须调用）：任一任务 ESCALATED → 需求 ESCALATED；任一 HUMAN_GATE **或 WAITING_APPROVAL** → AWAITING_GATE；全部 MERGED/CANCELLED → COMPLETED；否则 IN_PROGRESS（BLOCKED_BY_RESOURCE / QUARANTINED / RETRY_WAIT 不冒充门禁）。
 
 ## 证据文件
 

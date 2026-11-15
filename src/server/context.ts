@@ -187,7 +187,8 @@ export function createServerContext(options: ServerContextOptions = {}): ServerC
       }
       if (reqTasks.some((t) => t.state === 'ESCALATED')) {
         req.status = 'ESCALATED';
-      } else if (reqTasks.some((t) => t.state === 'HUMAN_GATE')) {
+      } else if (reqTasks.some((t) => t.state === 'HUMAN_GATE' || t.state === 'WAITING_APPROVAL')) {
+        // WAITING_APPROVAL 同样是「等人」：需求层面应呈现为等待门禁放行（D-12）。
         req.status = 'AWAITING_GATE';
       } else if (reqTasks.every((t) => t.state === 'MERGED' || t.state === 'CANCELLED')) {
         req.status = 'COMPLETED';

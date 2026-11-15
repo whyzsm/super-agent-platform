@@ -703,6 +703,45 @@ describe('HTTP 路由层（隔离实例 + 真实 HTTP）', () => {
     });
   });
 
+  describe('需求状态聚合（recomputeRequirementStatus）', () => {
+    it('WAITING_APPROVAL 使需求进入 AWAITING_GATE（等人即等门禁）', async () => {
+      const app = await startTestApp();
+      try {
+        const wait = await post<{ ok: boolean; to: string }>(
+          app.url + '/api/tasks/task-2042-b1/resource-transition',
+          { kind: 'WAIT_APPROVAL' },
+        );
+        assert.equal(wait.status, 200);
+        assert.equal(wait.body.to, 'WAITING_APPROVAL');
+        const boot = await json<{ requirements: { id: string; status: string }[] }>(app.url + '/api/bootstrap');
+        assert.equal(
+          boot.body.requirements.find((r) => r.id === 'req-2042')?.status,
+          'AWAITING_GATE',
+        );
+      } finally {
+        await app.close();
+      }
+    });
+
+    it('BLOCKED_BY_RESOURCE 不冒充门禁：需求保持 IN_PROGRESS', async () => {
+      const app = await startTestApp();
+      try {
+        const block = await post<{ to: string }>(
+          app.url + '/api/tasks/task-2042-b1/resource-transition',
+          { kind: 'BLOCK_RESOURCE' },
+        );
+        assert.equal(block.body.to, 'BLOCKED_BY_RESOURCE');
+        const boot = await json<{ requirements: { id: string; status: string }[] }>(app.url + '/api/bootstrap');
+        assert.equal(
+          boot.body.requirements.find((r) => r.id === 'req-2042')?.status,
+          'IN_PROGRESS',
+        );
+      } finally {
+        await app.close();
+      }
+    });
+  });
+
   describe('MCP 与记忆路由', () => {
     it('POST /api/mcp initialize 协商协议版本', async () => {
       const app = await startTestApp();

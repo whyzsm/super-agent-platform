@@ -617,6 +617,9 @@ export function registerTaskRoutes(app: Express, ctx: ServerContext): void {
     }
     const idx = state.current.tasks.findIndex((t) => t.id === task.id);
     state.current.tasks[idx] = outcome.node;
+    // 资源迁移同样会改变需求聚合状态（如 WAITING_APPROVAL -> AWAITING_GATE）；
+    // 此前漏调导致需求状态陈旧（HTTP 测试抓出）。
+    recomputeRequirementStatus(outcome.node.reqId);
     saveState(state.current);
     res.json({
       task: outcome.node,

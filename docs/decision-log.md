@@ -107,6 +107,16 @@
 - 理由：编译产物是纯数据（可序列化、随快照原子落盘、reset 即清），实例化在读取侧完成——「注册表」没有第二份真相。
 - 影响：模板复用全链路可测（HTTP 用例：固化 req-2043 → 用 sop-req-2043 建 1 节点新需求 → 再固化 version=2 → 未固化 id 回落）；测试 251→263。
 
+## D-2026-11-16-12 需求聚合状态纳入 WAITING_APPROVAL；顺手修掉 recompute 漏调
+
+- 背景：handoff §7A 中优先级项「recomputeRequirementStatus 是否纳入 WAITING_APPROVAL/BLOCKED_BY_RESOURCE」。此前只有 HUMAN_GATE 会把需求置为 AWAITING_GATE。
+- 决策：
+  1. `WAITING_APPROVAL` → 需求 `AWAITING_GATE`（等人审批与等门禁在需求层面同义）。
+  2. `BLOCKED_BY_RESOURCE` / `QUARANTINED` / `RETRY_WAIT` **保持 IN_PROGRESS**：非人因阻塞不冒充门禁；ESCALATED 专属熔断语义不变。
+  3. 顺手修掉测试抓出的真实缺口：`resource-transition` 路由此前**从不调用** `recomputeRequirementStatus`（其余所有变更 handler 都调），资源迁移后需求状态一直是旧值。
+- 理由：聚合状态的语义是「需求此刻需要谁」；等人的状态归 AWAITING_GATE，等资源/重试的归进行中。
+- 影响：种子数据无 WAITING_APPROVAL 任务，存量行为不变；新增 2 条 HTTP 用例锁定两个方向；测试 263→265。
+
 ## D-2026-11-16-03 S1-1 拆分形态（补记，上轮已按此执行）
 
 - 决策：`server.ts` 拆为启动引导 + `src/server/` 9 个域模块；共享闭包收敛为 `ServerContext`（`state`/`seq` 盒子）；handler verbatim 迁移，不趁机混入 S3-2 模板注册表。
