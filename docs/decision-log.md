@@ -140,6 +140,16 @@
   5. 边界（诚实标注）：未注册 OTel context manager（避免再增依赖），startActiveSpan 自动父子传播不可用，嵌套 span 需显式 setSpan 传 context（测试与注释已固化）；GenAI 语义约定（gen_ai.* 属性）留待接 Langfuse 时对齐。
 - 验证：4 条单测（开关矩阵、端到端落盘字段、显式父子、未 end 不写盘）；**tracing 开启的服务跑冒烟 57-57，真实 verifier 产生 2 个真实 span 落盘**（superagent.verify passed=True 含 taskId）。
 
+## D-2026-11-16-15 Q1 拍板：自研幂等为主、Temporal 为生产可选后端（分层并存）
+
+- 背景：Q1「Temporal vs 自研幂等状态机」自 S0 起未书面拍板，S3-1 一直挂着。本机环境现已就绪：temporal CLI 1.10.1（官方脚本装于 ~/.temporalio/bin，brew/npm 均无可用包）+ dev server 实测可达（127.0.0.1:7233，数据落 ~/.superagent/temporal-dev.db，UI :8233）。
+- 决策：**分层并存，不二选一**。
+  1. 本地闭环默认继续用自研 CommandBus（append-only 日志 + commandId 去重 + seq 真实重算）——零外部依赖、已被 284 测试与冒烟覆盖；`createCommandBus({logPath})` 端口契约不变。
+  2. Temporal 定位为**生产/多 worker 场景的可选 durable 后端**，不做本地默认：durable execution 的收益（自动重试、超时、多 worker 编排）在单进程闭环兑现不了，为接而接反而引入常驻 worker 进程与全家桶依赖。
+  3. 接入路径（后续独立章节，验收标准已写入任务 s3-1）：`@temporalio/client + worker`，`LoopCommandWorkflow` 以 workflowId = commandId 实现同款幂等语义，activity 落同一命令日志；`SUPERAGENT_TEMPORAL_URL` 切换。
+- 理由：Q1 原题默认二者互斥，但端口架构（S0 起）恰好允许两者分层共存——本地零依赖可跑是本仓库的立身之本，生产能力按需挂载。
+- 影响：S3-1 的「需集群」阻塞解除（dev server 已就绪），实现排期为独立章节；本决策为 Q1 的书面结论。
+
 ## D-2026-11-16-03 S1-1 拆分形态（补记，上轮已按此执行）
 
 - 决策：`server.ts` 拆为启动引导 + `src/server/` 9 个域模块；共享闭包收敛为 `ServerContext`（`state`/`seq` 盒子）；handler verbatim 迁移，不趁机混入 S3-2 模板注册表。
