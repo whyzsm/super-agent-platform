@@ -150,6 +150,17 @@
 - 理由：Q1 原题默认二者互斥，但端口架构（S0 起）恰好允许两者分层共存——本地零依赖可跑是本仓库的立身之本，生产能力按需挂载。
 - 影响：S3-1 的「需集群」阻塞解除（dev server 已就绪），实现排期为独立章节；本决策为 Q1 的书面结论。
 
+## D-2026-11-16-16 S2-1 OIDC：零依赖 RS256 适配器 + 本地 Keycloak 端到端
+
+- 背景：S2-1 一直按「需企业身份系统」挂起。实际上验证 OIDC 适配器只需要一个能签 RS256 JWT 的 IdP——本机 Docker 已就绪，Keycloak 26 无需任何外部账号。
+- 决策：
+  1. IdP：本地 Keycloak 容器（`superagent-keycloak`，127.0.0.1:8080，admin/admin dev 模式；realm `superagent`、public client `superagent-platform`（password grant）、realm 角色 viewer/developer/reviewer/admin、测试用户 dev-1）。踩坑记录：KC26 强制 user profile 姓/名必填，缺了会以「Account is not fully set up」拒绝发 token——补 firstName/lastName 即好。
+  2. 适配器：`src/identity/oidcProvider.ts` **零依赖**（node:crypto + fetch）——RS256 严格验签（alg 混淆防护：非 RS256 头直接拒）、JWKS 按 kid 选取 + 缓存、exp/iss 校验、`preferred_username -> userId`、`realm_access.roles ∩ 合法角色` 映射；无 token / 任何失败 -> 匿名 viewer（fail-safe，与 localProvider 匿名语义一致）。resolve 是同步契约，JWKS 需先 warmup()，未预热一律拒绝（绝不放行未验签 token）。
+  3. 接线：`createServerContext({identityProvider})` 注入；`SUPERAGENT_OIDC_ISSUER` 启动切换。OIDC 模式下**没有 loopback dev 注入**——不带 Bearer 的本地请求是匿名 viewer，写操作 403（这是刻意的生产语义，.env.example 有说明）。
+  4. 测试分层：8 条自包含单测（真 RSA 密钥 + node:http 真 JWKS 服务 + 自签 JWT：角色映射/匿名/过期/issuer 不符/错签/alg 混淆/未预热/垃圾结构），Keycloak 在线与否不影响 `npm test`；另做一次真实 Keycloak 端到端（见验证）。
+- 验证（真实 Keycloak）：OIDC 后端起服务实测——无 token 读 200 / 无 token 写 403 / 伪造 token 403 / dev-1 Bearer 写 201；审计含 dev-1 行（task:advance）与 2 条匿名 denied。
+- 影响：S2-1 完成（「需企业身份系统」的阻塞解除——验证级 IdP 本机即可）；单测 284→292；lint 0；冒烟 57-57（默认后端不变）。
+
 ## D-2026-11-16-03 S1-1 拆分形态（补记，上轮已按此执行）
 
 - 决策：`server.ts` 拆为启动引导 + `src/server/` 9 个域模块；共享闭包收敛为 `ServerContext`（`state`/`seq` 盒子）；handler verbatim 迁移，不趁机混入 S3-2 模板注册表。

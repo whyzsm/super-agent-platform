@@ -7,6 +7,8 @@ import { createServer as createViteServer } from 'vite';
 import { createServerContext } from './src/server/context';
 import { createPostgresStateStore } from './src/store/postgresStateStore';
 import type { StateStore } from './src/store/types';
+import { createOidcIdentityProvider } from './src/identity/oidcProvider';
+import type { IdentityProvider } from './src/identity/types';
 import { createApp } from './src/server/app';
 
 /**
@@ -29,7 +31,20 @@ async function startServer() {
     stateStore = pgStore;
     console.log('[SuperAgent] StateStore = Postgres (SUPERAGENT_PG_CMD 已配置)');
   }
-  const ctx = createServerContext(stateStore ? { stateStore } : {});
+  // S2-1：设置 SUPERAGENT_OIDC_ISSUER 即把 IdentityProvider 换成 OIDC（RS256 JWT 验签）。
+  // 注意：OIDC 模式下没有 loopback dev 注入，不带 Bearer 的本地请求是匿名 viewer（写操作 403）。
+  const oidcIssuer = process.env.SUPERAGENT_OIDC_ISSUER?.trim();
+  let identityProvider: IdentityProvider | undefined;
+  if (oidcIssuer) {
+    const oidc = createOidcIdentityProvider({ issuer: oidcIssuer });
+    await oidc.warmup();
+    identityProvider = oidc;
+    console.log(`[SuperAgent] IdentityProvider = OIDC (${oidcIssuer})`);
+  }
+  const ctx = createServerContext({
+    ...(stateStore ? { stateStore } : {}),
+    ...(identityProvider ? { identityProvider } : {}),
+  });
 
   if (!ctx.imWebhookSecret) {
     console.warn(

@@ -91,6 +91,8 @@ export interface ServerContextOptions {
   stateStore?: StateStore;
   /** OTel 追踪（S3-6）：true 或经 env SUPERAGENT_TRACING=1 启用 */
   tracing?: boolean;
+  /** 外置 IdentityProvider（S2-1：OIDC）。缺省本地 dev header 实现。 */
+  identityProvider?: IdentityProvider;
   /** 覆盖追踪输出文件（默认 <dataDir>/.superagent-traces.jsonl） */
   tracesFile?: string;
 }
@@ -137,7 +139,7 @@ export function createServerContext(options: ServerContextOptions = {}): ServerC
       statePath: path.join(dataDir, '.superagent-state.json'),
       logPath: path.join(dataDir, '.superagent-commands.jsonl'),
     });
-  const identityProvider = createLocalIdentityProvider();
+  const identityProvider = options.identityProvider ?? createLocalIdentityProvider();
   const auditLog = createAuditLog({ path: path.join(dataDir, '.superagent-audit.jsonl') });
   const commandBus = createCommandBus({
     logPath: path.join(dataDir, '.superagent-loop.jsonl'),
