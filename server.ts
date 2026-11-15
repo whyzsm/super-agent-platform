@@ -22,14 +22,23 @@ import {
   computeMaxDuplicateScore,
   recallMemoryAssets,
 } from './src/memory/recallEngine';
+import { appendRuntimeEvent, lastEventSeq, replayRuntimeEvents } from './src/runtime/eventLog';
+import { createHeadlessJsonAdapter } from './src/runtime/adapters/headlessJson';
+import {
+  isRealRuntimeEnabled,
+  recordStateTransition,
+  runRealVerification,
+} from './src/runtime/realRuntime';
 import type {
   AgentProvider,
+  AgentReasoningEvent,
   DaemonEnvelope,
   DagNode,
   MemoryAsset,
   Requirement,
   SopTemplateId,
   TeamAiAsset,
+  VerifierCheck,
 } from './src/protocol';
 
 const PORT = 3000;
@@ -566,17 +575,31 @@ async function startServer() {
         });
       } else {
         task.state = 'VERIFYING';
-        const checks = [
-          { name: 'lint' as const, passed: true, durationMs: 360, summary: '0 warnings' },
-          { name: 'typecheck' as const, passed: true, durationMs: 740, summary: 'tsc --noEmit passed' },
-          { name: 'unit_test' as const, passed: true, durationMs: 145, summary: 'all assertions passed' },
-          { name: 'cross_review' as const, passed: true, durationMs: 1620, summary: '异构模型交叉审查通过' },
+        let checks: VerifierCheck[] = [
+          { name: 'lint', passed: true, durationMs: 360, summary: '0 warnings' },
+          { name: 'typecheck', passed: true, durationMs: 740, summary: 'tsc --noEmit passed' },
+          { name: 'unit_test', passed: true, durationMs: 145, summary: 'all assertions passed' },
+          { name: 'cross_review', passed: true, durationMs: 1620, summary: '异构模型交叉审查通过' },
         ];
+        let verifyPassed = true;
+        let verifyLogs = 'lint / typecheck / unit_test / cross_review 全部通过。';
+
+        if (isRealRuntimeEnabled()) {
+          const real = runRealVerification(task);
+          checks = real.checks;
+          verifyPassed = real.passed;
+          verifyLogs = real.logs.trim() || 'npm run lint 无输出';
+          recordStateTransition(task, 'RUNNING', 'VERIFYING', real.traceId);
+          task.terminalLines.push(
+            `[real-verifier] ${verifyPassed ? 'PASS' : 'FAIL'} (${real.traceId})`,
+          );
+        }
+
         task.verifierChecks = checks;
         const { nextNode } = transitionTaskVerification(
           task,
-          true,
-          'lint / typecheck / unit_test / cross_review 全部通过。',
+          verifyPassed,
+          verifyLogs,
           task.role === 'planner' ? 'PLAN_GATE' : 'MERGE_GATE',
         );
         Object.assign(task, nextNode);
@@ -585,11 +608,21 @@ async function startServer() {
           ts: timeStr,
           seq: ++globalSeq,
           kind: 'verifier_check',
-          title: '确定性门禁全绿，已进入人工审批门禁',
-          detail: 'lint + typecheck + unit_test + 异构 Reviewer 交叉审查通过',
-          status: 'ok',
+          title: verifyPassed
+            ? '确定性门禁全绿，已进入人工审批门禁'
+            : '真实确定性门禁未通过，已回灌日志并打回重试',
+          detail: verifyPassed
+            ? isRealRuntimeEnabled()
+              ? 'npm run lint 退出码 0'
+              : 'lint + typecheck + unit_test + 异构 Reviewer 交叉审查通过'
+            : verifyLogs.slice(0, 500),
+          status: verifyPassed ? 'ok' : 'failed',
         });
-        task.terminalLines.push('[verifier] all checks green -> entering HUMAN_GATE');
+        task.terminalLines.push(
+          verifyPassed
+            ? '[verifier] all checks green -> entering HUMAN_GATE'
+            : `[verifier] FAILED -> ${task.state}`,
+        );
         broadcastEnvelope({
           machineId: machine,
           seq: globalSeq,
@@ -610,6 +643,103 @@ async function startServer() {
     recomputeRequirementStatus(task.reqId);
     saveState(state);
     res.json({ task, requirement: state.requirements.find((r) => r.id === task.reqId) });
+  });
+
+  // 真实运行时受控端点：默认关闭，且必须显式配置 CLI 命令，避免误触发模型调用。
+  app.post('/api/tasks/:id/real-spawn', (req, res) => {
+    if (!isRealRuntimeEnabled()) {
+      res.status(404).json({ error: '真实运行时未启用' });
+      return;
+    }
+    if (!process.env.SUPERAGENT_CLI_COMMAND) {
+      res.status(400).json({
+        error: '未配置 SUPERAGENT_CLI_COMMAND，拒绝默认发起模型调用',
+      });
+      return;
+    }
+    const task = state.tasks.find((t) => t.id === req.params.id);
+    if (!task) {
+      res.status(404).json({ error: '任务节点不存在' });
+      return;
+    }
+
+    const adapter = createHeadlessJsonAdapter({ provider: task.provider });
+    const traceId = `spawn-${task.id}-${Date.now()}`;
+    let received = 0;
+    appendRuntimeEvent({
+      traceId,
+      type: 'SPAWN',
+      taskId: task.id,
+      detail: `command=${process.env.SUPERAGENT_CLI_COMMAND}`,
+    });
+
+    adapter.onEvent((event) => {
+      received += 1;
+      appendRuntimeEvent({
+        traceId,
+        type: 'AGENT_EVENT',
+        taskId: task.id,
+        detail: JSON.stringify(event).slice(0, 500),
+      });
+      const normalized: AgentReasoningEvent = {
+        id: `ev-real-${Date.now()}-${received}`,
+        ts: new Date().toTimeString().slice(0, 8),
+        seq: ++globalSeq,
+        kind: 'thought',
+        title: `[real-cli] ${event.type}`,
+        detail: JSON.stringify(event).slice(0, 400),
+        status:
+          event.type === 'completed'
+            ? event.exitCode === 0
+              ? 'ok'
+              : 'failed'
+            : 'running',
+      };
+      task.events.push(normalized);
+      task.terminalLines.push(`[real-cli] ${normalized.detail}`);
+      broadcastEnvelope({
+        machineId: task.assignedMachine || 'mac-studio-sh-01',
+        seq: globalSeq,
+        ts: Date.now(),
+        payload: { type: 'AGENT_EVENT', taskId: task.id, event: normalized },
+      });
+    });
+
+    const prompt =
+      (req.body as { prompt?: string })?.prompt?.trim() ||
+      `只读说明当前任务：${task.title}`;
+
+    void adapter
+      .spawn({
+        taskId: task.id,
+        // 垂直切片不建 worktree，统一在仓库根执行受控命令。
+        worktreePath: process.cwd(),
+        prompt,
+        systemRulesPath: '.teamai/AGENTS.md',
+        env: {},
+      })
+      .then(({ sessionId, pid }) => {
+        saveState(state);
+        res.status(201).json({ sessionId, pid, traceId, received });
+      })
+      .catch((err: unknown) => {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'CLI 启动失败',
+        });
+      });
+  });
+
+  app.get('/api/runtime/events', (req, res) => {
+    if (!isRealRuntimeEnabled()) {
+      res.status(404).json({ error: '真实运行时未启用' });
+      return;
+    }
+    const traceId =
+      typeof req.query.traceId === 'string' ? req.query.traceId : undefined;
+    res.json({
+      events: replayRuntimeEvents(traceId),
+      lastSeq: lastEventSeq(),
+    });
   });
 
   app.post('/api/tasks/:id/simulate-failure', (req, res) => {

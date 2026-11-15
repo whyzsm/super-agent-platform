@@ -6,3 +6,13 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# npm 锁文件（覆盖全局 ~/.gitignore_global 中的忽略规则）
+!package-lock.json
+
+# 本地 AI 工具与工作流数据，不进版本控制
+.claude/
+.cursor/
+.workbuddy/
+.trellis/
+.superagent-events.jsonl
