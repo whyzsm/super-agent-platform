@@ -6,11 +6,11 @@
 
 ## 何时适用
 
-改动 `server.ts` 任意端点、或 `src/engine`、`src/daemon`、`src/gateway`、`src/memory`、`src/data/seed.ts` 时，先读本目录规范。
+改动 `src/server/` 任意路由、`server.ts` 启动引导、或 `src/engine`、`src/daemon`、`src/gateway`、`src/memory`、`src/data/seed.ts` 时，先读本目录规范。
 
 ## 当前实现状态（务必先读）
 
-- `server.ts` 仍是单文件 Express，但已接入 `src/store/`（原子状态快照 + 命令日志）、`src/identity/`（身份 / RBAC / 审计）、`src/loop/`（幂等命令总线 + 3 态生产者）、`src/workspace/`（真实 git worktree）、`src/mcp/`（MCP 协议服务端）。
+- `server.ts` 已拆为**启动引导 + 路由域模块**（S1-1 完成）：`src/server/{app,middleware,context,tasks,requirements,memory,webhooks,runtime,workspace}.ts` 承载全部端点，共享可变状态收敛进 `ServerContext`（`state`/`seq` 盒子）；`server.ts` 只留 dotenv 首行、装配、vite/static 与 listen。端口实例（store / identity / loop）在 `createServerContext()` 注入。
 - **默认走真实运行时**：`advance` 的 `RUNNING → VERIFYING` 分支由 `runRealVerifier()` 真实执行 `npm run lint` + `npm test`；回退演示态用 `SUPERAGENT_DEMO_MODE=1` 或 `SUPERAGENT_REAL_RUNTIME=0`。详见 [real-runtime.md](./real-runtime.md)。
 - 真实 CLI 通过 `createHeadlessJsonAdapter()` spawn，但 `real-spawn` 强制要求显式 `SUPERAGENT_CLI_COMMAND`，不会默认发起模型调用；未实测登录态与额度。
 - `worktreePath` 由 `git worktree add` **真实落盘**（`src/workspace/worktreeManager.ts`，端点 `POST/DELETE /api/tasks/:id/worktree`），创建后替换为绝对路径；种子数据里的 `~/.superagent/...` 只是未创建前的占位。详见 [workspace-worktree.md](./workspace-worktree.md)。
@@ -21,7 +21,7 @@
 
 | 文件 | 主题 |
 |------|------|
-| [directory-structure.md](./directory-structure.md) | 单文件 server + `src/` 领域分层与落点 |
+| [directory-structure.md](./directory-structure.md) | `src/server/` 路由层拆分 + `src/` 领域分层与落点 |
 | [state-persistence.md](./state-persistence.md) | 原子快照、命令日志与损坏快照隔离 |
 | [error-handling.md](./error-handling.md) | 统一 `{ error }` 响应与吞掉的异常 |
 | [api-and-events.md](./api-and-events.md) | 端点、SSE、NDJSON、IM webhook |
@@ -33,14 +33,14 @@
 
 ## 证据文件
 
-- `server.ts:36` `STATE_FILE`、`:77` `sseClients`、`:149` 起端点注册。
+- `src/server/context.ts` `createServerContext`、`src/server/middleware.ts` `ROUTE_ACTIONS`、`src/server/app.ts` `createApp`；启动引导见 `server.ts` `startServer`。
 - `src/engine/stateMachine.ts`、`src/daemon/ndjsonParser.ts`、`src/gateway/imWebhook.ts`、`src/memory/recallEngine.ts`。
 
 ## 验证命令
 
 三个可靠命令：
 - `npm run lint`（`tsc --noEmit`）
-- `npm test`（136 个 `node:test` 用例）
+- `npm test`（197 个 `node:test` 用例：136 个领域单测 + 61 个 `src/server/http.test.ts` 路由层断言）
 - `node scripts/e2e-smoke.mjs`（对已启动服务跑 54 项真实 HTTP 断言）
 
 仍**没有 `typecheck` 脚本**，不要假定 `npm run typecheck` 可用。

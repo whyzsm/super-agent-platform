@@ -21,12 +21,12 @@
 ## 本地实现的行为约定（每条都有测试）
 
 - **原子快照**：`fileStateStore.save()` 写同目录 `.tmp-<uuid>` 再 `renameSync`；`load()` 遇损坏 JSON **抛错**，不静默回退 seed。证据：`src/store/fileStateStore.test.ts` 的崩溃恢复用例。
-- **损坏快照隔离**：`server.ts` 的 `loadOrInitState()` 捕获解析异常后先 `renameSync` 成 `.superagent-state.json.corrupt-<ts>` 留证，再 `console.error` 告知剩余命令数，最后才用 seed 初始化。禁止删掉损坏文件。
+- **损坏快照隔离**：`src/server/context.ts` 的 `loadOrInitState()` 捕获解析异常后先 `renameSync` 成 `.superagent-state.json.corrupt-<ts>` 留证，再 `console.error` 告知剩余命令数，最后才用 seed 初始化。禁止删掉损坏文件。
 - **幂等命令**：中间件只在 `req.body.commandId` 存在时调 `store.appendCommand()`；重复返回 409，重放不二次写状态。日志是 `.superagent-commands.jsonl`。
 - **身份解析**：`x-superagent-user/team/project/agent/roles` 五个头；非 loopback 且无身份头 → 匿名 viewer，写操作一律 403。loopback 且无身份头时注入 dev 管理员（`SUPERAGENT_DEV_USER/TEAM/ROLES` 可覆盖），这是**仅限本地**的开箱可用适配，生产接 OIDC 后必须关闭。
 - **RBAC**：`src/identity/rbac.ts` 的 `isAllowed()` / `assertAllowed()`；权限矩阵写在文件头注释。`canAccessAsset()` 复用 `src/memory/recallEngine.ts` 的 `findMatchedAcl()`，不重写四级 ACL。
 - **不可变审计**：`src/identity/audit.ts` 的 `createAuditLog()`，append-only JSONL，写操作**先记 allowed/denied 再执行**；`GET /api/runtime/audit` 只读。
-- **3 态生产者**：`src/loop/taskLifecycle.ts` 的 `applyResourceTransition()` 以 `canTransition()` 为唯一裁决，非法迁移零副作用；`server.ts` 的 `POST /api/tasks/:id/resource-transition` 先经 `commandBus.submit()` 幂等再改状态。
+- **3 态生产者**：`src/loop/taskLifecycle.ts` 的 `applyResourceTransition()` 以 `canTransition()` 为唯一裁决，非法迁移零副作用；`src/server/tasks.ts` 的 `POST /api/tasks/:id/resource-transition` 先经 `commandBus.submit()` 幂等再改状态。
 - **Q5 红线**：`deriveRetrospective()` 的 `requiresHumanReview` 恒为 `true`；`POST /api/tasks/:id/retrospective` 只返回草案文本，**不写任何文件、不改 `TeamAiAsset`**。
 
 ## 运行时开关
@@ -51,4 +51,4 @@
 
 ## 验证
 
-`npm run lint`、`npm test`（99 用例）、`bash .teamai/hooks/pre-merge-gate.sh` 三条全绿；端到端断言见 `docs/superagent-unblock-solution-v1.md` §6 / §9。
+`npm run lint`、`npm test`（197 用例）；端到端断言见 `scripts/e2e-smoke.mjs`（54 项）与 `docs/superagent-unblock-solution-v1.md` §6 / §9。注意 `.teamai/hooks/pre-merge-gate.sh` 写的是 pnpm 命令，本仓库不可用。

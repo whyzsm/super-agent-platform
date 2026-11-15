@@ -4,7 +4,7 @@
 
 ## 何时适用
 
-改动 `src/runtime/` 下任一模块、`server.ts` 的 `RUNNING → VERIFYING` 分支、或 `/api/tasks/:id/real-spawn` `/api/runtime/events` 两个端点时先读本文。
+改动 `src/runtime/` 下任一模块、`src/server/tasks.ts` 的 `RUNNING → VERIFYING` 分支、或 `/api/tasks/:id/real-spawn` `/api/runtime/events` 两个端点时先读本文。
 
 ## 模块与职责
 
@@ -14,7 +14,7 @@
 | `src/runtime/verifier.ts` | 唯一真实确定性门禁：`spawnSync('npm', ...)` 真实执行 `npm run lint` 与 `npm test` 两项，按各自退出码产出 `VerifierCheck[]`；`typecheck` / `cross_review` 无真实执行手段故不产出 | `runRealVerifier(cwd, timeoutMs)`、`runLintVerifier(cwd, timeoutMs)`（兼容旧入口，仅 lint 一项） |
 | `src/runtime/realRuntime.ts` | 开关判定与编排，结果交回 `transitionTaskVerification()` | `isRealRuntimeEnabled`、`runRealVerification`、`recordStateTransition` |
 | `src/runtime/adapters/headlessJson.ts` | 实现 `AgentRunnerAdapter`，真实 spawn 并把 stdout NDJSON 交 `parseCliNdjsonLine()` 脱敏 / 危险拦截 | `createHeadlessJsonAdapter(options)` |
-| `server.ts` | 仅 `RUNNING → VERIFYING` 分支加受控路径 + 2 个受控端点 | `POST /api/tasks/:id/advance`、`POST /api/tasks/:id/real-spawn`、`GET /api/runtime/events` |
+| `src/server/tasks.ts` / `src/server/runtime.ts` | `RUNNING → VERIFYING` 受控路径与受控端点 | `POST /api/tasks/:id/advance`（tasks.ts）、`POST /api/tasks/:id/real-spawn`、`GET /api/runtime/events`（runtime.ts） |
 
 ## 开关与端口约定
 
@@ -40,7 +40,7 @@
 - **真实模型 CLI 集成未验证**：`codex exec` 与 `claude -p --output-format stream-json` 的登录态、返回码、事件行结构未实测；验收用本地 `node -e` NDJSON 源做链路自检，不以模拟结果顶替真实调用。详见任务 `research/cli-probe.md`。
 - 依赖缺陷已修复：`esbuild` 升到 `^0.28.0`、`npm install` 无需 `--legacy-peer-deps`；新增 `npm test`（37 用例）。原 `bun.lock` 实为 npm lock v2，已归位为 `package-lock.json`（v3）；项目 `.gitignore` 用 `!package-lock.json` 覆盖了全局忽略规则。
 - 已修：状态改原子快照（临时文件 + rename）、`saveState()` 写失败 stderr 告警、默认 IM 密钥改 env 注入 + 503、`syncedToGit` 恒 false、`eventLog` seq 实时重算。仍为演示态：`worktreePath` 只是字符串、真实模型 CLI 登录态未实测。
-- `eventLog.ts` 的 `EVENT_FILE` 是基于 `process.cwd()` 的模块常量，`cachedLastSeq` 初始化后不再重读文件；多进程或外部追加时 seq 可能冲突。S1-1 拆 `server.ts` 时应改为可注入路径并明确单写者约束。
+- `eventLog.ts` 的 `EVENT_FILE` 是基于 `process.cwd()` 的模块常量（S1-1 拆分后仍未改为可注入路径——除 runtime 域外其余状态/日志路径均已入 `createServerContext`，此项是遗留缺口）；`lastEventSeq` 每次真实扫描 max seq，但多进程并发写仍可能冲突，单进程单写者是前提。
 - 未建 worktree：`real-spawn` 的 cwd 固定为仓库根，不是 `worktreePath` 字符串指向的目录。
 
 ## 常见错误

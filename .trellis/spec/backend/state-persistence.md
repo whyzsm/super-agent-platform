@@ -10,25 +10,24 @@
 
 ## 本地模式
 
-- 唯一数据源：`server.ts:36` `STATE_FILE = path.resolve(process.cwd(), '.superagent-state.json')`。
-- 读：`loadOrInitState()`（`server.ts:50`）用 `fs.existsSync` + `fs.readFileSync` 全量解析，仅当 `requirements` 与 `tasks` 都是数组才采用；否则回退 `createInitialSeedState()`（`src/data/seed.ts`）并 `saveState()`。
-- 写：`saveState()`（`server.ts:67`）`fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2))` **全量覆盖**，无增量、无事务、无并发控制、无版本号。
-- 团队资产落盘：`syncTeamAiFileToDisk()`（`server.ts:38`）只在 `relPath.startsWith('.teamai/')` 时 `mkdirSync` + `writeFileSync` 写 `.teamai/skills/*.md`，仍静默忽略写失败。
-- 所有端点共享模块级 `let state = loadOrInitState()`；改完状态后统一 `saveState(state)` 并 `broadcastEnvelope()`。
+- 唯一数据源：`src/server/context.ts` 的 `createServerContext({ dataDir })` 把状态文件定为 `<dataDir>/.superagent-state.json`（默认 `process.cwd()`；HTTP 测试注入临时目录获得完全隔离）。
+- 读：`loadOrInitState()`（同文件）先 `store.load()`；损坏 JSON 会先 `renameSync` 隔离为 `.corrupt-<ts>` 留证并告警剩余命令数，**不静默回退**；无文件时用 `createInitialSeedState()`（`src/data/seed.ts`）初始化。
+- 写：`ctx.saveState()` 走 `fileStateStore.save()`（同目录 tmp + `renameSync` 原子替换）**全量覆盖**，无增量、无事务、无并发控制、无版本号；失败 `console.error` 不抛。
+- 团队资产落盘：`ctx.syncTeamAiFileToDisk()` 只在 `relPath.startsWith('.teamai/')` 时写 `<repoRoot>/` 下对应文件，仍静默忽略写失败。
+- 所有端点共享 `ServerContext` 的 `state` 盒子（`{ current }`）；改完状态后统一 `ctx.saveState(ctx.state.current)` 并 `ctx.broadcastEnvelope()`。`POST /api/reset` 整体替换 `state.current`，读取方必须实时读 `.current`。
 
 ## 证据文件
 
 | 文件 | 符号 / 行为 |
 |------|-------------|
-| `server.ts:36` | `STATE_FILE` 定义 |
-| `server.ts:50 / :67 / :38` | `loadOrInitState` / `saveState` / `syncTeamAiFileToDisk` |
+| `src/server/context.ts` | `createServerContext` / `loadOrInitState` / `saveState` / `syncTeamAiFileToDisk` / `resetState` |
 | `src/data/seed.ts` | `PlatformState` / `createInitialSeedState` |
-| `.superagent-state.json` | 已提交的运行时快照 |
-| `server.ts:1287` | `POST /api/reset` 重置为种子态 |
+| `.superagent-state.json` | 运行时快照（gitignore，不入库） |
+| `src/server/app.ts` | `POST /api/reset` 调 `ctx.resetState()` |
 
 ## 当前实现状态（演示态 / 反模式）
 
-- `saveState()` 写失败已改为 `console.error` 向 `stderr` 输出明确错误（含错误 message），不抛错、不返回状态：客户端可能收到 `201` 但数据未落盘；`syncTeamAiFileToDisk()` 仍用 `try/catch` 静默忽略写失败。
+- `saveState()` 写失败 `console.error` 向 `stderr` 输出明确错误（含错误 message），不抛错、不返回状态：客户端可能收到 `201` 但数据未落盘；`syncTeamAiFileToDisk()` 仍用 `try/catch` 静默忽略写失败。
 - `.superagent-state.json` 含内部主机名（`mac-studio-sh-01`、`ubuntu-ci-runner-04`）与模拟 DAG / 门禁数据，且被提交进仓库。
 - `syncedToGit` 在 `POST /api/requirements/:id/solidify-sop`、`POST /api/memories/:id/approve`、`PUT /api/teamai` 里**恒为 `false`**：只写了本地 `.teamai/skills/*.md`，没有任何 git commit / MR。字段语义见 `src/protocol/index.ts` 的 JSDoc。
 - `src/components/TeamAiProtocolView.tsx` 的 `PGVECTOR_DDL` 只是 UI 展示字符串，不是真实建表。
@@ -38,8 +37,8 @@
 - 假设 `saveState()` 失败会抛异常打挂服务——它不会，已改为 `stderr` 显式告警，别依赖返回值判断持久化成功。
 - 把本地 `.teamai/*.md` 写盘成功当成"已推送远端"；`syncedToGit` 恒 false，S2-2 接入 Git-native Asset Registry 前不会变 true。
 - 给 `PlatformState` 加字段却漏改 `createInitialSeedState()`，`/api/reset` 后该字段丢失。
-- 直接编辑 `.superagent-state.json` 期望热更新：`loadOrInitState()` 只在进程启动时读一次。
+- 直接编辑 `.superagent-state.json` 期望热更新：`loadOrInitState()` 只在 `createServerContext()` 时读一次。
 
 ## 验证
 
-`npm run lint`（`tsc --noEmit`）与 `npm test`（`node --import tsx --test`，136 个 `node:test` 用例全绿）。
+`npm run lint`（`tsc --noEmit`）与 `npm test`（`node --import tsx --test`，197 个 `node:test` 用例全绿）。

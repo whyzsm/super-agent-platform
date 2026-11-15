@@ -61,5 +61,5 @@
 
 - `src/workspace/worktreeManager.ts`：`canonicalPath`、`ensureExcluded`、`createWorktree`、`removeWorktree`
 - `src/workspace/worktreeManager.test.ts`：12 用例，全部在 `os.tmpdir()` 里真实 `git init` 后断言真实文件系统
-- `server.ts`：`worktreeRoot`、`POST/DELETE /api/tasks/:id/worktree`
+- `src/server/workspace.ts`：`worktreeRoot`（来自 `ServerContext`）、`POST/DELETE /api/tasks/:id/worktree`、`GET /api/workspaces`；另有 `src/server/http.test.ts` 在临时 git 仓内断言真实建删
 - `scripts/e2e-smoke.mjs` §12：9 项真实 HTTP 断言（含重复删除 404、非法 baseRef 400）

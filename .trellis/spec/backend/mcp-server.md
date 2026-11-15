@@ -83,5 +83,5 @@ Q5 红线在协议层同样生效：MCP 不提供任何写工具，`recall_memor
 
 - `src/mcp/server.ts`：`handleMcpMessage`、`validateAgainstSchema`、`callTool`、`MCP_PROTOCOL_VERSION`
 - `src/mcp/mcp.test.ts`：21 用例（握手、协商、批量、通知、全部错误码、draft 不外泄）
-- `server.ts`：`mcpContext`、`app.post('/api/mcp')`、`app.get('/api/mcp')` 405、JSON-RPC 错误中间件
+- `src/server/memory.ts`：`mcpContext`、`POST /api/mcp`、`GET /api/mcp` 405；JSON-RPC 错误中间件在 `src/server/app.ts`
 - `scripts/e2e-smoke.mjs` §13：8 项真实 HTTP 断言

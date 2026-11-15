@@ -27,7 +27,7 @@
 ## 当前实现状态（诚实标注）
 
 - `tsconfig.json` **没有 `strict: true`**，隐含 `strictNullChecks` 关闭；`npm run lint`（`tsc --noEmit`）通过不等于类型严谨。
-- **没有运行时校验库**（无 zod / yup / io-ts）；`server.ts` 用 `req.body as { ... }` 断言、`loadOrInitState()` 用 `JSON.parse(raw) as PlatformState`，store 里直接读 `body.error`。
+- **没有运行时校验库**（无 zod / yup / io-ts）；`src/server/` 路由层用 `req.body as { ... }` 断言、`loadOrInitState()` 用 `JSON.parse(raw) as PlatformState`，store 里直接读 `body.error`。
 - 唯一已知的类型重复反模式：`src/components/TeamAiProtocolView.tsx:11` 的 `PROTOCOL_SPEC` 展示字符串里复制了 `SopTemplateId`、`TaskState`、`NodeTokenUsage`、`NormalizedAgentEvent`、`AgentRunnerAdapter`、`DaemonCommand` 的文本（且 `AgentRunnerAdapter.mode` 用的是内联字面量而非 `AdapterMode` 别名，存在漂移）。详见 [guides/shared-contracts.md](../guides/shared-contracts.md)。
 
 ## 常见错误
@@ -39,4 +39,4 @@
 
 ## 验证
 
-`npm run lint`（`tsc --noEmit`）与 `npm test`（`node --import tsx --test`，136 个 `node:test` 用例全绿）。
+`npm run lint`（`tsc --noEmit`）与 `npm test`（`node --import tsx --test`，197 个 `node:test` 用例全绿）。
