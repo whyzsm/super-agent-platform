@@ -8,7 +8,7 @@ import type {
   SopTemplateId,
   TeamAiAsset,
 } from '../protocol';
-import { needsAttention } from '../utils/statusStyles';
+import { needsAttention, sopTemplateLabel } from '../utils/statusStyles';
 
 export type ActiveTab = 'workbench' | 'memory' | 'teamai' | 'daemons';
 
@@ -39,7 +39,7 @@ interface WorkspaceStore {
     baseBranch: string;
     sourceChannel: 'web' | 'cli' | 'wecom' | 'feishu';
     primaryProvider: AgentProvider;
-    sopTemplate: SopTemplateId;
+    sopTemplate: SopTemplateId | `sop-${string}`;
   }) => Promise<boolean>;
   advanceTask: (taskId: string) => Promise<void>;
   provisionWorktree: (taskId: string) => Promise<void>;
@@ -152,7 +152,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         selectedTaskId: newTasks[0]?.id ?? null,
         activeTab: 'workbench',
         mutating: false,
-        notice: `已按「${newReq.sopTemplate === 'bugfix_flow' ? 'Bug 修复流' : '标准 Feature 开发流'}」创建需求「${newReq.title}」，Planner 已生成 ${newTasks.length} 节点 DAG 并挂起于 Plan Gate。`,
+        notice: `已按「${sopTemplateLabel(newReq.sopTemplate)}」创建需求「${newReq.title}」，Planner 已生成 ${newTasks.length} 节点 DAG 并挂起于 Plan Gate。`,
       }));
       return true;
     } catch (err) {

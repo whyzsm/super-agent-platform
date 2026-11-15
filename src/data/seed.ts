@@ -5,6 +5,7 @@ import type {
   Requirement,
   TeamAiAsset,
 } from '../protocol';
+import type { SerializedSopTemplate } from '../dag/compile';
 
 export interface PlatformState {
   requirements: Requirement[];
@@ -12,6 +13,8 @@ export interface PlatformState {
   daemons: DaemonRunner[];
   memories: MemoryAsset[];
   teamAiAssets: TeamAiAsset[];
+  /** 固化流水线编译出的可复用子 SOP 模板（S3-2）；旧快照缺省为无 */
+  sopTemplates?: SerializedSopTemplate[];
 }
 
 export function createInitialSeedState(): PlatformState {

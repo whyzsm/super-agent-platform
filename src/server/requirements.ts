@@ -6,7 +6,9 @@ import type {
   SopTemplateId,
   TeamAiAsset,
 } from '../protocol';
-import { buildTasksForTemplate, normalizeSopTemplateId } from '../dag/templates';
+import { buildTasksForTemplate, resolveTemplateRef } from '../dag/templates';
+import { compilePipelineToTemplate, deserializeTemplate } from '../dag/compile';
+import type { SopTemplateRef } from '../protocol';
 import type { ServerContext } from './context';
 
 /**
@@ -42,7 +44,12 @@ export function registerRequirementRoutes(app: Express, ctx: ServerContext): voi
     const reqId = `req-${Date.now().toString().slice(-4)}`;
     const nowIso = new Date().toISOString();
     const provider: AgentProvider = primaryProvider || 'codex';
-    const template = normalizeSopTemplateId(sopTemplate);
+    // 模板解析（S3-2 后半）：内置直取；sop-* 命中固化清单则复用子 SOP；否则回落 feature_flow。
+    const templateRef: SopTemplateRef = resolveTemplateRef(
+      sopTemplate,
+      state.current.sopTemplates ?? [],
+    );
+    const customEntry = (state.current.sopTemplates ?? []).find((e) => e.id === templateRef);
 
     const newReq: Requirement = {
       id: reqId,
@@ -52,20 +59,23 @@ export function registerRequirementRoutes(app: Express, ctx: ServerContext): voi
       repoUrl: (repoUrl || 'git@example.invalid:superagent/app-service.git').trim(),
       baseBranch: (baseBranch || 'main').trim(),
       sourceChannel: sourceChannel || 'web',
-      sopTemplate: template,
+      sopTemplate: templateRef,
       status: 'AWAITING_GATE',
       createdBy: 'lin.wei',
       createdAt: nowIso,
     };
 
-    const newTasks = buildTasksForTemplate(template, {
+    const buildCtx = {
       reqId,
       requirement: newReq,
       provider,
       nowIso,
       timeStr: new Date().toTimeString().slice(0, 8),
       nextSeq: () => ++seq.current,
-    });
+    };
+    const newTasks = customEntry
+      ? deserializeTemplate(customEntry).build(buildCtx)
+      : buildTasksForTemplate(templateRef, buildCtx);
 
     state.current.requirements.unshift(newReq);
     state.current.tasks.push(...newTasks);
@@ -175,6 +185,14 @@ ${stepLines}
       state.current.teamAiAssets.push(teamAiAsset);
     }
 
+    // S3-2 后半：把已合入流水线编译成可复用子 SOP 模板（重复固化 bump version）。
+    const existingTemplate = (state.current.sopTemplates ?? []).find((e) => e.id === `sop-${reqItem.id}`);
+    const compiled = compilePipelineToTemplate(reqNodes, reqItem, existingTemplate);
+    state.current.sopTemplates = [
+      ...(state.current.sopTemplates ?? []).filter((e) => e.id !== compiled.id),
+      compiled,
+    ];
+
     syncTeamAiFileToDisk(gitPath, contentMd);
     saveState(state.current);
     res.json({
@@ -182,6 +200,7 @@ ${stepLines}
       teamAiAsset,
       memories: state.current.memories,
       teamAiAssets: state.current.teamAiAssets,
+      sopTemplate: compiled,
     });
   });
 }

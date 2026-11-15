@@ -28,7 +28,7 @@ import type { DagNode, Requirement, TaskState } from '../protocol';
 import {
   PROVIDER_LABELS,
   ROLE_LABELS,
-  SOP_TEMPLATE_LABELS,
+  sopTemplateLabel,
   TASK_STATE_META,
 } from '../utils/statusStyles';
 
@@ -221,7 +221,7 @@ export function DagCanvas({
             <span className="shrink-0">基线 {requirement.baseBranch}</span>
             <span aria-hidden="true">·</span>
             <span className="font-sans text-slate-600 shrink-0">
-              {SOP_TEMPLATE_LABELS[requirement.sopTemplate ?? 'feature_flow']}
+              {sopTemplateLabel(requirement.sopTemplate)}
             </span>
           </div>
           <h1 className="text-sm font-semibold text-slate-900 truncate mt-0.5">

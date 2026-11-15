@@ -4,6 +4,7 @@ import {
   buildTasksForTemplate,
   DAG_TEMPLATES,
   normalizeSopTemplateId,
+  resolveTemplateRef,
   type DagTemplateContext,
 } from './templates';
 import type { AgentProvider, SopTemplateId } from '../protocol';
@@ -102,5 +103,32 @@ describe('未知模板 id 兜底', () => {
     const ctx = makeCtx();
     const fallback = buildTasksForTemplate('nope' as SopTemplateId, ctx);
     assert.equal(fallback.length, 4);
+  });
+});
+
+describe('S3-2 后半：版本化戳记与模板引用解析', () => {
+  test('实例化节点带 templateId / templateVersion 戳', () => {
+    for (const id of ['feature_flow', 'bugfix_flow'] as const) {
+      const nodes = buildTasksForTemplate(id, makeCtx());
+      assert.ok(nodes.every((n) => n.templateId === id), `${id} 全部节点应带模板戳`);
+      assert.ok(nodes.every((n) => n.templateVersion === DAG_TEMPLATES[id].version));
+    }
+  });
+
+  test('resolveTemplateRef：内置直取 / sop-* 命中固化清单 / 其余回落 feature_flow', () => {
+    const custom = [{ id: 'sop-req-2043' }, { id: 'sop-req-1234' }];
+    assert.equal(resolveTemplateRef('bugfix_flow', custom), 'bugfix_flow');
+    assert.equal(resolveTemplateRef('sop-req-2043', custom), 'sop-req-2043');
+    // 未命中固化清单、垃圾值、缺省：一律 feature_flow（历史兜底语义）
+    assert.equal(resolveTemplateRef('sop-req-9999', custom), 'feature_flow');
+    assert.equal(resolveTemplateRef('garbage', custom), 'feature_flow');
+    assert.equal(resolveTemplateRef(undefined, custom), 'feature_flow');
+    assert.equal(resolveTemplateRef(42, custom), 'feature_flow');
+  });
+
+  test('buildTasksForTemplate 收到 sop-* 引用时兜底 feature_flow（固化模板走 compile.ts）', () => {
+    const nodes = buildTasksForTemplate('sop-req-2043' as never, makeCtx());
+    assert.equal(nodes.length, 4);
+    assert.ok(nodes.every((n) => n.templateId === 'feature_flow'));
   });
 });

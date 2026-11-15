@@ -1,4 +1,11 @@
-import type { AgentProvider, GateType, SopTemplateId, TaskRole, TaskState } from '../protocol';
+import type {
+  AgentProvider,
+  GateType,
+  SopTemplateId,
+  SopTemplateRef,
+  TaskRole,
+  TaskState,
+} from '../protocol';
 
 /**
  * 「需要人工/调度器介入」的状态全集（前端镜像）。
@@ -113,3 +120,9 @@ export const SOP_TEMPLATE_LABELS: Record<SopTemplateId, string> = {
   feature_flow: '标准 Feature 开发流',
   bugfix_flow: 'Bug 修复流',
 };
+
+/** 模板标签：内置走 Record；固化子 SOP（sop-*）回退显示原始 id，不因加宽类型丢穷举。 */
+export function sopTemplateLabel(ref: SopTemplateRef | undefined): string {
+  if (!ref) return SOP_TEMPLATE_LABELS.feature_flow;
+  return SOP_TEMPLATE_LABELS[ref as SopTemplateId] ?? ref;
+}

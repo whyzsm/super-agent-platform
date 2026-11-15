@@ -95,6 +95,18 @@
 - 理由：taskLifecycle 在无请求上下文（未来 daemon 消费者）下也要能写旁路事件，强签名注入会传染所有调用链；可选参数 + 默认单例保持兼容且把注入路径收敛到服务端。loop.test.ts 的 chdir 沙箱从「被迫的 hack」转为「兼容路径的守卫」，保留。
 - 影响：eventLog.test.ts 摆脱 chdir hack（9→6 用例，工厂直测 + 外部追加 seq 接续 + 损坏行容忍）；冒烟 57-57，verifier 旁路事件仍落仓库根日志（实测确认）。
 
+## D-2026-11-16-11 S3-2 后半：模板版本化与子 SOP 编译复用
+
+- 背景：注册表（前半）只有两个内置模板；「版本化、子 SOP 可复用」要求把已合入流水线变成可再次实例化的模板。
+- 决策：
+  1. **类型**：`Requirement.sopTemplate` 加宽为 `SopTemplateRef = SopTemplateId | \`sop-\${string}\``（模板字面量类型，不丢内置穷举）；`DagNode` 增加 `templateId?/templateVersion?` 戳；`PlatformState.sopTemplates?` 持久化固化模板。
+  2. **编译**：`src/dag/compile.ts` 纯函数 `compilePipelineToTemplate`——只存拓扑骨架（title/role/provider/adapterMode/依赖序号/预算），丢弃具体 reqId/事件/终端输出；重复固化同 id 自动 bump version。**反编译** `deserializeTemplate` 按新 reqId 实例化节点链（首节点 PLAN_GATE 挂起，其余 PENDING）。
+  3. **运行时注册表零模块状态**：固化模板只存于 `state.current.sopTemplates`，路由按需 deserialize——避免模块级可变 Map 在多 app 实例（http.test 每用例新建 app）间泄漏。
+  4. **解析**：`resolveTemplateRef`——内置直取；`sop-*` 且命中固化清单才用；其余（垃圾值/未固化 id/缺省）一律回落 feature_flow（保持历史兜底）。前端 `sopTemplateLabel` 对 `sop-*` 回退显示原始 id。
+  5. solidify-sop 响应新增 `sopTemplate` 字段（编译产物），需求创建响应里任务带模板戳。
+- 理由：编译产物是纯数据（可序列化、随快照原子落盘、reset 即清），实例化在读取侧完成——「注册表」没有第二份真相。
+- 影响：模板复用全链路可测（HTTP 用例：固化 req-2043 → 用 sop-req-2043 建 1 节点新需求 → 再固化 version=2 → 未固化 id 回落）；测试 251→263。
+
 ## D-2026-11-16-03 S1-1 拆分形态（补记，上轮已按此执行）
 
 - 决策：`server.ts` 拆为启动引导 + `src/server/` 9 个域模块；共享闭包收敛为 `ServerContext`（`state`/`seq` 盒子）；handler verbatim 迁移，不趁机混入 S3-2 模板注册表。

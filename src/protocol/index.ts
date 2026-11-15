@@ -21,6 +21,9 @@ export type TaskRole = 'planner' | 'builder' | 'reviewer';
 
 export type SopTemplateId = 'feature_flow' | 'bugfix_flow';
 
+/** 模板引用：内置两套，或以 sop- 前缀引用固化流水线产生的子 SOP 模板。 */
+export type SopTemplateRef = SopTemplateId | `sop-${string}`;
+
 export interface NodeTokenUsage {
   inputTokens: number;
   outputTokens: number;
@@ -117,6 +120,10 @@ export interface DagNode {
   lineComments: LineReviewComment[];
   activeCheckpoint?: TaskCheckpoint;
   usage?: NodeTokenUsage;
+  /** 生成该节点的 SOP 模板 id（内置 feature_flow/bugfix_flow 或固化 sop-*） */
+  templateId?: string;
+  /** 生成该节点的模板版本（同一模板重复固化会递增） */
+  templateVersion?: number;
 }
 
 export interface Requirement {
@@ -127,7 +134,7 @@ export interface Requirement {
   repoUrl: string;
   baseBranch: string;
   sourceChannel: 'web' | 'cli' | 'wecom' | 'feishu';
-  sopTemplate?: SopTemplateId;
+  sopTemplate?: SopTemplateRef;
   status: 'PLANNING' | 'IN_PROGRESS' | 'AWAITING_GATE' | 'COMPLETED' | 'ESCALATED';
   createdBy: string;
   createdAt: string;

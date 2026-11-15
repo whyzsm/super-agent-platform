@@ -1,4 +1,4 @@
-import type { AgentProvider, DagNode, Requirement, SopTemplateId } from '../protocol';
+import type { AgentProvider, DagNode, Requirement, SopTemplateId, SopTemplateRef } from '../protocol';
 
 /**
  * SOP/DAG 模板注册表（S3-2 前半）。
@@ -28,9 +28,16 @@ export interface DagTemplateContext {
 
 export interface DagTemplate {
   id: SopTemplateId;
+  /** 模板版本：拓扑有实质变更时递增；实例化节点会携带 templateId@templateVersion 戳 */
+  version: number;
   title: string;
   description: string;
   build: (ctx: DagTemplateContext) => DagNode[];
+}
+
+/** 给实例化节点打模板戳（S3-2 版本化）。 */
+function stampTemplate(nodes: DagNode[], id: string, version: number): DagNode[] {
+  return nodes.map((n) => ({ ...n, templateId: id, templateVersion: version }));
 }
 
 /** 历史兜底语义：只有显式 'bugfix_flow' 才走缺陷流，其余一律 feature_flow。 */
@@ -309,19 +316,42 @@ function buildFeatureFlow(ctx: DagTemplateContext): DagNode[] {
 export const DAG_TEMPLATES: Record<SopTemplateId, DagTemplate> = {
   bugfix_flow: {
     id: 'bugfix_flow',
+    version: 1,
     title: 'Bug 修复流',
     description: '复现定位 -> 隔离 Worktree 修复 + 回归单测 -> 异构交叉 Review（3 节点链）',
-    build: buildBugfixFlow,
+    build: (ctx) => stampTemplate(buildBugfixFlow(ctx), 'bugfix_flow', 1),
   },
   feature_flow: {
     id: 'feature_flow',
+    version: 1,
     title: '标准 Feature 开发流',
     description: '拆解规划 -> 双 Builder 并行 -> 异构交叉安全审查（4 节点 DAG）',
-    build: buildFeatureFlow,
+    build: (ctx) => stampTemplate(buildFeatureFlow(ctx), 'feature_flow', 1),
   },
 };
 
-/** 经注册表构建模板 DAG；未知 id 由 normalize 兜底为 feature_flow。 */
-export function buildTasksForTemplate(templateId: SopTemplateId, ctx: DagTemplateContext): DagNode[] {
-  return DAG_TEMPLATES[normalizeSopTemplateId(templateId)].build(ctx);
+/**
+ * 解析模板引用（S3-2 后半）：内置 id 直取；`sop-*` 且在已固化清单中命中则用固化模板；
+ * 其余（含缺省/垃圾值）回落 feature_flow —— 保持历史兜底语义。
+ */
+export function resolveTemplateRef(
+  input: unknown,
+  custom: ReadonlyArray<{ id: string }>,
+): SopTemplateRef {
+  if (typeof input === 'string' && input !== '') {
+    if (input === 'feature_flow' || input === 'bugfix_flow') return input;
+    if (input.startsWith('sop-') && custom.some((e) => e.id === input)) {
+      return input as SopTemplateRef;
+    }
+  }
+  return 'feature_flow';
+}
+
+/**
+ * 经注册表构建内置模板 DAG；非内置引用（sop-* 传错、垃圾值）一律兜底 feature_flow。
+ * 固化子 SOP 模板不走这里 —— 用 dag/compile.ts 的 deserializeTemplate(...).build。
+ */
+export function buildTasksForTemplate(templateId: SopTemplateRef, ctx: DagTemplateContext): DagNode[] {
+  const builtinId: SopTemplateId = templateId === 'bugfix_flow' ? 'bugfix_flow' : 'feature_flow';
+  return DAG_TEMPLATES[builtinId].build(ctx);
 }

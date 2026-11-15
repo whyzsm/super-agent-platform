@@ -288,6 +288,58 @@ describe('HTTP 路由层（隔离实例 + 真实 HTTP）', () => {
       }
     });
 
+    it('S3-2 全链路：固化流水线 -> 复用子 SOP 模板创建新需求', async () => {
+      const app = await startTestApp();
+      try {
+        // 1. 固化已全部合入的 req-2043 -> 返回编译出的 sop 模板并入库
+        const solidify = await post<{
+          sopTemplate: { id: string; version: number; steps: { title: string }[]; sourceReqId: string };
+        }>(app.url + '/api/requirements/req-2043/solidify-sop');
+        assert.equal(solidify.status, 200);
+        assert.equal(solidify.body.sopTemplate.id, 'sop-req-2043');
+        assert.equal(solidify.body.sopTemplate.version, 1);
+        assert.equal(solidify.body.sopTemplate.sourceReqId, 'req-2043');
+        assert.equal(solidify.body.sopTemplate.steps.length, 1, 'req-2043 单节点流水线');
+
+        // 2. 用固化模板 id 创建新需求 -> 单节点 DAG 实例化且带版本戳
+        const create = await post<{
+          requirement: { sopTemplate: string };
+          tasks: { id: string; templateId?: string; templateVersion?: number; state: string; activeCheckpoint?: { gateType: string } }[];
+        }>(app.url + '/api/requirements', {
+          title: '复用固化 SOP 的新需求',
+          specMd: 'spec',
+          sopTemplate: 'sop-req-2043',
+        });
+        assert.equal(create.status, 201);
+        assert.equal(create.body.requirement.sopTemplate, 'sop-req-2043');
+        assert.equal(create.body.tasks.length, 1);
+        assert.equal(create.body.tasks[0].templateId, 'sop-req-2043');
+        assert.equal(create.body.tasks[0].templateVersion, 1);
+        assert.equal(create.body.tasks[0].state, 'HUMAN_GATE');
+        assert.equal(create.body.tasks[0].activeCheckpoint?.gateType, 'PLAN_GATE');
+
+        // 3. 再次固化同源流水线 -> version 递增且不产生重复条目
+        const again = await post<{ sopTemplate: { version: number } }>(
+          app.url + '/api/requirements/req-2043/solidify-sop',
+        );
+        assert.equal(again.status, 200);
+        assert.equal(again.body.sopTemplate.version, 2);
+        const boot = await json<{ sopTemplates: { id: string }[] }>(app.url + '/api/bootstrap');
+        assert.equal(boot.body.sopTemplates.filter((e) => e.id === 'sop-req-2043').length, 1);
+
+        // 4. 未固化的 sop-* id 回落 feature_flow
+        const fallback = await post<{ requirement: { sopTemplate: string }; tasks: unknown[] }>(
+          app.url + '/api/requirements',
+          { title: '兜底', specMd: 's', sopTemplate: 'sop-not-compiled' },
+        );
+        assert.equal(fallback.status, 201);
+        assert.equal(fallback.body.requirement.sopTemplate, 'feature_flow');
+        assert.equal(fallback.body.tasks.length, 4);
+      } finally {
+        await app.close();
+      }
+    });
+
     it('POST /api/requirements 缺标题返回 400', async () => {
       const app = await startTestApp();
       try {
