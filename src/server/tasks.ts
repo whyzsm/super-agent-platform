@@ -8,7 +8,8 @@ import {
 import { detectDangerousCommand, redactSecrets } from '../policy/engine';
 import { parseCliNdjsonLine } from '../daemon/ndjsonParser';
 import { computeMaxDuplicateScore } from '../memory/recallEngine';
-import type { VerifierCheck } from '../protocol';
+import type { DagNode, VerifierCheck } from '../protocol';
+import { evaluateGateRelease } from '../policy/gateTiers';
 import {
   isRealRuntimeEnabled,
   recordStateTransition,
@@ -18,6 +19,68 @@ import type { ResourceKind } from '../loop/taskLifecycle';
 import type { LoopCommandKind } from '../loop/commandBus';
 import { applyResourceTransition, deriveRetrospective } from '../loop/taskLifecycle';
 import type { ServerContext } from './context';
+
+/**
+ * Q8 门禁三挡：advance 落入 HUMAN_GATE 后按策略评估是否确定性放行。
+ * 仅 auto_approve_when_green 且全绿、非保护分支、非 DANGER_GATE 时生效；
+ * 代批挡（delegate_to_reviewer）当前诚实降级为人工（见 policy/gateTiers.ts）。
+ */
+function maybeAutoReleaseGate(ctx: ServerContext, task: DagNode): void {
+  const checkpoint = task.activeCheckpoint;
+  if (!checkpoint) return;
+  const verdict = evaluateGateRelease(ctx.gateTierConfig, {
+    gateType: checkpoint.gateType,
+    verifierChecks: task.verifierChecks,
+    worktreeBranch: task.worktreeBranch,
+  });
+  if (verdict.outcome !== 'auto_approve') return;
+
+  const { state, seq, saveState, broadcastEnvelope, recomputeRequirementStatus, auditLog } = ctx;
+  const reviewerId = `gate-policy:${verdict.tier}`;
+  const { nextNode, shouldExtractSkill } = resolveGateDecision(task, checkpoint, {
+    approved: true,
+    reviewerId,
+    comment: verdict.reason,
+  });
+  Object.assign(task, nextNode);
+  if (checkpoint.gateType === 'PLAN_GATE') task.state = 'MERGED';
+  if (shouldExtractSkill) {
+    const skill = extractSkillDraft(task, 'team-platform-core', reviewerId);
+    if (skill) {
+      skill.duplicateScore = computeMaxDuplicateScore(skill.contentMd, state.current.memories);
+      state.current.memories.unshift(skill);
+    }
+  }
+  task.events.push({
+    id: `ev-${Date.now()}`,
+    ts: new Date().toTimeString().slice(0, 8),
+    seq: ++seq.current,
+    kind: 'verifier_check',
+    title: `门禁策略自动放行（${verdict.tier}）`,
+    detail: verdict.reason,
+    status: 'ok',
+  });
+  task.terminalLines.push(`[gate-policy] AUTO-RELEASE (${verdict.tier}): ${verdict.reason}`);
+  if (task.state === 'MERGED') {
+    ctx.unlockReadyNodesForRequirement(task.reqId);
+  }
+  broadcastEnvelope({
+    machineId: task.assignedMachine || 'mac-studio-sh-01',
+    seq: ++seq.current,
+    ts: Date.now(),
+    payload: { type: 'STATE_ACK', taskId: task.id, state: task.state },
+  });
+  recomputeRequirementStatus(task.reqId);
+  auditLog.record({
+    userId: 'gate-policy',
+    teamId: 'team-platform-core',
+    action: 'task:gate',
+    target: `auto-release ${task.id}`,
+    outcome: 'allowed',
+    detail: verdict.reason,
+  });
+  saveState(state.current);
+}
 
 /** 任务域路由：advance / simulate / gate / ndjson / input / comments / resource-transition / retrospective。 */
 export function registerTaskRoutes(app: Express, ctx: ServerContext): void {
@@ -160,6 +223,10 @@ export function registerTaskRoutes(app: Express, ctx: ServerContext): void {
         'MERGE_GATE',
       );
       Object.assign(task, nextNode);
+    }
+
+    if (task.state === 'HUMAN_GATE' && task.activeCheckpoint) {
+      maybeAutoReleaseGate(ctx, task);
     }
 
     recomputeRequirementStatus(task.reqId);

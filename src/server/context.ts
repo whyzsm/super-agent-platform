@@ -9,6 +9,7 @@ import { createLocalIdentityProvider } from '../identity/localProvider';
 import type { IdentityProvider, Principal } from '../identity/types';
 import { createAuditLog, type AuditLog } from '../identity/audit';
 import { createCommandBus, type LoopCommandKind } from '../loop/commandBus';
+import { parseGateTier, type GateApprovalTier, type GateTierConfig } from '../policy/gateTiers';
 import type { DaemonEnvelope } from '../protocol';
 
 /**
@@ -43,6 +44,9 @@ export interface ServerContext {
   /** IM 回调 HMAC 密钥；未配置时相关端点返回 503（设计行为） */
   readonly imWebhookSecret: string | undefined;
 
+  /** Q8 门禁三挡配置；默认 always_confirm（与历史行为一致） */
+  readonly gateTierConfig: GateTierConfig;
+
   /** git 仓库根（worktree / verifier 的执行目录），测试可指向临时仓库 */
   readonly repoRoot: string;
   /** agent 工作树根目录，默认 <repoRoot>/.worktrees */
@@ -70,6 +74,8 @@ export interface ServerContextOptions {
   imWebhookSecret?: string;
   /** 测试注入初始状态；缺省走 loadOrInit（损坏快照隔离 + 种子兜底） */
   initialState?: PlatformState;
+  /** Q8 门禁三挡；缺省解析 SUPERAGENT_GATE_TIER（非法值 fail-safe 到 always_confirm） */
+  gateTier?: GateApprovalTier;
 }
 
 function loadOrInitState(store: StateStore, statePath: string): PlatformState {
@@ -118,6 +124,9 @@ export function createServerContext(options: ServerContextOptions = {}): ServerC
   });
 
   const imWebhookSecret = options.imWebhookSecret ?? process.env.IM_WEBHOOK_SECRET;
+  const gateTierConfig: GateTierConfig = {
+    tier: options.gateTier ?? parseGateTier(process.env.SUPERAGENT_GATE_TIER),
+  };
 
   const state: { current: PlatformState } = {
     current: options.initialState ?? loadOrInitState(store, path.join(dataDir, '.superagent-state.json')),
@@ -134,6 +143,7 @@ export function createServerContext(options: ServerContextOptions = {}): ServerC
     seq,
     sseClients,
     imWebhookSecret,
+    gateTierConfig,
     repoRoot,
     worktreeRoot,
 

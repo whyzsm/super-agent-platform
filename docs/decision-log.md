@@ -39,6 +39,17 @@
 - 理由：S1-1 时已明确此项独立于拆分；现在注册表 + 9 个结构/拓扑/兜底用例让「新增模板」变成登记 + 测试，而不是再复制一段字面量。
 - 边界（后半未做，诚实标注）：模板版本化与子 SOP 组合复用未实现；`deriveRetrospective`/solidify-sop 与注册表的双向衔接属 S3-2 后半。
 
+## D-2026-11-16-06 Q8 门禁三挡放行落地为配置
+
+- 背景：v1 所有人工门禁都是「每次确认」，注意力成本高（handoff §8A 中优先级「中」）。Q8 完整方案是「三挡权限 + 审查模型代批」，其中代批模型有硬约束（无工具、无凭证、与其他成员发言隔离），当前没有真实审查模型可接。
+- 决策：
+  1. 新增 `src/policy/gateTiers.ts`：`always_confirm`（默认，历史行为）/ `auto_approve_when_green`（确定性规则放行，不涉模型）/ `delegate_to_reviewer`（目标挡；当前**诚实降级**为人工，评估结果写明「代批模型未接入」，不伪造代批结论）。
+  2. `auto_approve_when_green` 的放行条件全部确定性可审计：仅 MERGE_GATE（可配置放宽）、verifier 全绿且非空（无真实执行项不放行）、目标分支不在保护名单（默认 main）；**DANGER_GATE 永不自动放行**（红线，测试锁定）。
+  3. 配置源：`SUPERAGENT_GATE_TIER` 环境变量（`.env.example` 已登记），非法值 fail-safe 到最严挡并告警；测试可经 `createServerContext({ gateTier })` 注入。
+  4. 自动放行复用 gate 审批同一代码路径（`resolveGateDecision` + PLAN 特例 + 下游解锁 + 技能萃取），reviewerId 记为 `gate-policy:<tier>`，事件 / terminalLines / 不可变审计三处留痕。
+- 理由：三挡中只有确定性放行挡可真实落地；「配置了代批但悄悄当全绿放行」是最危险的伪造形态，宁可降级并在审计里说明。
+- 影响：`advance` 落入 HUMAN_GATE 后多一次策略评估（默认挡立即返回，零行为变化）；S3-5 的「三挡放行」要素就此闭环，任务标记完成。
+
 ## D-2026-11-16-03 S1-1 拆分形态（补记，上轮已按此执行）
 
 - 决策：`server.ts` 拆为启动引导 + `src/server/` 9 个域模块；共享闭包收敛为 `ServerContext`（`state`/`seq` 盒子）；handler verbatim 迁移，不趁机混入 S3-2 模板注册表。

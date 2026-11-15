@@ -184,6 +184,76 @@ describe('HTTP 路由层（隔离实例 + 真实 HTTP）', () => {
     });
   });
 
+  describe('Q8 门禁三挡（gateTier 配置）', () => {
+    it('默认 always_confirm：advance 全绿仍进 HUMAN_GATE（历史行为不变）', async () => {
+      const app = await startTestApp();
+      try {
+        const { status, body } = await post<{ task: { state: string } }>(
+          app.url + '/api/tasks/task-2042-b1/advance',
+        );
+        assert.equal(status, 200);
+        assert.equal(body.task.state, 'HUMAN_GATE');
+      } finally {
+        await app.close();
+      }
+    });
+
+    it('auto_approve_when_green：全绿 MERGE_GATE 直接 MERGED 且留痕可审计', async () => {
+      const app = await startTestApp({ gateTier: 'auto_approve_when_green' });
+      try {
+        const { status, body } = await post<{
+          task: { state: string; events: { title: string }[]; terminalLines: string[] };
+          requirement: { status: string } | undefined;
+        }>(app.url + '/api/tasks/task-2042-b1/advance');
+        assert.equal(status, 200);
+        assert.equal(body.task.state, 'MERGED', '全绿 MERGE_GATE 应自动放行合入');
+        assert.ok(
+          body.task.events.some((e) => e.title.includes('自动放行')),
+          '必须留下自动放行事件',
+        );
+        assert.ok(body.task.terminalLines.some((l) => l.includes('[gate-policy] AUTO-RELEASE')));
+        assert.equal(body.requirement?.status, 'IN_PROGRESS', 'b2 仍在 RETRY_WAIT，需求未完结');
+        const audit = await json<{ entries: { target: string; detail?: string }[] }>(
+          app.url + '/api/runtime/audit',
+        );
+        assert.ok(
+          audit.body.entries.some((e) => e.target.includes('auto-release task-2042-b1')),
+          '审计必须记录自动放行',
+        );
+      } finally {
+        await app.close();
+      }
+    });
+
+    it('auto_approve_when_green：DANGER_GATE 永不自动放行', async () => {
+      const app = await startTestApp({ gateTier: 'auto_approve_when_green' });
+      try {
+        const { status, body } = await post<{ task: { state: string; activeCheckpoint: { gateType: string } } }>(
+          app.url + '/api/tasks/task-2041-b1/simulate-danger',
+          { command: 'git push --force origin main' },
+        );
+        assert.equal(status, 200);
+        assert.equal(body.task.state, 'HUMAN_GATE', '危险门禁必须等人工');
+        assert.equal(body.task.activeCheckpoint.gateType, 'DANGER_GATE');
+      } finally {
+        await app.close();
+      }
+    });
+
+    it('delegate_to_reviewer：代批未接入，诚实降级为人工确认', async () => {
+      const app = await startTestApp({ gateTier: 'delegate_to_reviewer' });
+      try {
+        const { status, body } = await post<{ task: { state: string } }>(
+          app.url + '/api/tasks/task-2042-b1/advance',
+        );
+        assert.equal(status, 200);
+        assert.equal(body.task.state, 'HUMAN_GATE', '无真实代批模型时不得伪造放行');
+      } finally {
+        await app.close();
+      }
+    });
+  });
+
   describe('需求路由', () => {
     it('POST /api/requirements feature_flow 生成 4 节点 DAG', async () => {
       const app = await startTestApp();
