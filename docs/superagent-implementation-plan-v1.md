@@ -13,7 +13,7 @@
 
 | 结论 | 内容 |
 | --- | --- |
-| 当前位置 | 已完成 **P0 的一个垂直切片**（真实 verifier + append-only 事件日志 + headless-json adapter 链路），不是完整 P0；依赖缺陷已修、19 份 spec 已共享、本地 2 个提交未 push、Trellis 任务全部归档 |
+| 当前位置 | 已完成 **P0 的一个垂直切片**（真实 verifier + append-only 事件日志 + headless-json adapter 链路），不是完整 P0；依赖缺陷已修、19 份 spec 已共享、本地提交未 push（数量以 `git rev-list --left-right --count origin/main...HEAD` 为准）、S0-1/2/4 与 S1-6 已落地 |
 | 完整路线 | **S0 前置与债务 → S1 完成 P0 → S2(P1) 团队化+云端记忆 → S3(P2) 自动 loop+N agent → S4(P3) 共同成长 → S5(P4) 规模化**，六段、五个硬依赖 |
 | 关键路径 | `Q1 编排引擎选型` → `S3 durable Orchestrator` → `S4 RSI` → `S5 规模化`；`Q4 凭证边界` 是 S1 的硬门禁，`Q5 处方护栏` 是 S4 的硬门禁 |
 | 最容易失控的点 | 不是"让 N 个 agent 并行写代码"，而是**自动改写流程的权力**与**团队资产被污染** |
@@ -53,13 +53,13 @@
 
 | 编号 | 债务 | 影响 | 建议归属 |
 | --- | --- | --- | --- |
-| D1 | `.teamai/hooks/pre-merge-gate.sh` 与 `AGENTS.md` 要求 `pnpm lint/typecheck/test`，实际只有 `lint` + `test` 且用 npm | 门禁脚本不可直接运行 | S0 |
-| D2 | `package.json` 的 `name` 仍是 `react-example` | 包标识错误 | S0 |
-| D3 | `.superagent-state.json` 含内部 hostname、模拟数据、默认 IM 密钥明文 | 合规风险（Q11） | S0 |
-| D4 | `tsconfig` 未开 `strict`；`saveState()` 静默吞写失败；`syncedToGit=true` 无 git 操作 | 可靠性 | S0/S1 |
+| D1 | `.teamai/hooks/pre-merge-gate.sh` 与 `AGENTS.md` 曾要求 `pnpm lint/typecheck/test`，实际只有 `lint` + `test` 且用 npm | 门禁脚本不可直接运行 | **S0-1 已修复**（脚本现跑 `npm run lint && npm test`） |
+| D2 | `package.json` 的 `name` 曾是 `react-example` | 包标识错误 | **S0-2 已修复**（`super-agent-platform`） |
+| D3 | `.superagent-state.json` 曾含内部 hostname、模拟数据、默认 IM 密钥明文 | 合规风险（Q11） | **S0-3 技术部分已做**（脱敏 + env 注入 + 停止跟踪）；**git 历史清理未做，需 Q11 拍板** |
+| D4 | `tsconfig` 未开 `strict`；`syncedToGit=true` 无 git 操作 | 可靠性 | S0 已修 `saveState()` 静默吞失败（改 stderr 告警）；strict / syncedToGit 仍待 S1 |
 | D5 | 状态机原 8 态缺 `BLOCKED_BY_RESOURCE` / `QUARANTINED` / `WAITING_APPROVAL`（Q12） | 长时等待与污染隔离无法表达 | **S0-4 已补齐（11 态，18 用例全绿）**；新状态的生产者逻辑仍待 S1/S3 接入 |
 | D6 | 真实模型 CLI 登录态 / stream-json 事件结构未实测 | adapter 端到端未闭环 | S0（需授权） |
-| D7 | 本地 2 个提交未 push | 远端无最新代码 | S0（需授权） |
+| D7 | 本地提交未 push（数量随实施推进变化） | 远端无最新代码 | S0（需授权） |
 
 ---
 
@@ -138,7 +138,7 @@ flowchart LR
 | S1-7 | 真实模型 CLI 端到端 | S0-5 | S0-5 | 一条 `bugfix_flow` 从需求到 PR 全程真实 | 额度与登录态 |
 
 **验收**：架构稿 P0 口径——一条 `bugfix_flow` 全程真实、可重放、崩溃可恢复；换一个 CLI 仍可跑通。
-**不做**：多租户、云端记忆、RSI、跨仓（Q9 放 S5）。
+**不做**：多租户、云端记忆、RSI、跨仓（Q9 在 S1-3 先定单仓边界，跨仓能力放 S5-4）。
 
 ### 5.2 S2 · 团队化协作 + 团队记忆云端化（架构稿 P1）
 
@@ -220,7 +220,7 @@ flowchart LR
 | M12 | Runtime Adapter Hub | S1 / S3 | S1-5、S3-5 | **P0 垂直切片已落地 headless-json adapter** |
 | M13 | Daemon Fleet | S3 | S3-4 | `DaemonRunner` 类型 + 前端模拟舰队 |
 | M14 | Workspace Manager | S1 / S5 | S1-3、S5-2 | `worktreePath` 只是字符串，未真建 |
-| M15 | Credential Broker | S1 | S1-4 | 未开始；默认 IM 密钥硬编码 |
+| M15 | Credential Broker | S1 | S1-4 | 未开始；默认 IM 密钥已改为 env 注入（S0-3 技术部分） |
 | M16 | Memory Hub | S2 / S4 | S2-3、S4-5 | 状态文件里的 `MemoryAsset` + trigram 召回 |
 | M17 | Asset Registry（Git-native） | S2 / S4 | S2-2、S4-3 | `.teamai/` 本地文件，`syncedToGit` 假状态 |
 | M18 | Recall & Context Assembly | S2 / S4 | S2-4、S4-5 | `recallEngine.ts` 四级 ACL + trigram |
@@ -238,15 +238,15 @@ flowchart LR
 
 | 编号 | 决策 | 架构稿倾向 | 硬门禁阶段 | 拍板人 | 未拍板的影响 |
 | --- | --- | --- | --- | --- | --- |
-| Q1 | Temporal vs 自研幂等状态机 | 倾向 Temporal | **S3-1**（S1-2 需先定抽象） | 平台负责人 | S3 无法定型，连带拖 S4/S5 |
+| Q1 | Temporal vs 自研幂等状态机 | 倾向 Temporal | **S1-2 前需书面结论**（抽象定型）、**S3-1 最终定型** | 平台负责人 | S1-2 数据层抽象无法定，S3 无法定型，连带拖 S4/S5 |
 | Q2 | Git 与 Memory Hub 双写一致性 | Git 权威，Hub 可重建索引 | S2-2 | 平台负责人 | 资产发布事务边界不清 |
 | Q3 | 与 LoopForge/teamai-cli 关系 | 借语义自研、复用协议 | S2-2 | 平台负责人 | 生态孤岛或重复造轮子 |
 | Q4 | 本地 CLI 凭证 vs 云控制面 | 凭证留本机 + 短期注入 | **S1-4** | 安全负责人 | 提示注入攻击面敞开 |
-| Q5 | SOP 自动改写护栏 | **必须"处方 MR + 人审 + 护栏"** | **S4-3** | 平台负责人 | 自动流程失控 |
+| Q5 | SOP 自动改写护栏 | **必须"处方 MR + 人审 + 护栏"（红线，不可协商）** | **S4-3** | 平台负责人（确认执行方式，非选项拍板） | 自动流程失控 |
 | Q6 | 记忆防污染度量 | 命中率/采纳率/复发率为一级指标 | S2-4 | 平台负责人 | 记忆越写越脏 |
 | Q7 | N agent 角色粒度 | 固定角色起步、评审注册 | S3-3 | 平台负责人 | 角色漂移 |
 | Q8 | 人工门禁注意力成本 | 三挡放行、v1 默认每次确认 | S3-5 | 产品负责人 | 审批疲劳或越权 |
-| Q9 | 多仓/worktree 冲突 | P0 单仓，跨仓放 P4 | S1-3 / S5-4 | 平台负责人 | 过早承诺多仓并行 |
+| Q9 | 多仓/worktree 冲突 | P0 单仓，跨仓放 P4 | **S1-3 先确认单仓**、S5-4 跨仓 | 平台负责人 | 过早承诺多仓并行 |
 | Q10 | 许可证合规 | 受限代码只借鉴不复制 | S2-2 / S5-5 | 法务/平台 | 商用授权风险 |
 | Q11 | 已提交 state 文件清理 | S0 第一件事 | **S0-3** | 安全负责人 | 内部信息泄露 |
 | Q12 | 状态机补 3 态 | 补，保持纯函数可测 | S0-4 | 平台负责人 | 长时等待/污染隔离无法表达 |

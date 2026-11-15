@@ -24,3 +24,6 @@ coverage/
 !.trellis/scripts/
 !.trellis/agents/
 !.trellis/.gitignore
+
+# 运行态 state 快照（演示数据），不进版本控制
+.superagent-state.json

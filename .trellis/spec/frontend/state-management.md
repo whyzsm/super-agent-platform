@@ -30,7 +30,7 @@
 ## 当前实现状态（演示态）
 
 - 无缓存层、无乐观更新、无请求去重；每次 action 结束靠 SSE 广播回来的数据刷新。
-- 前端把后端的 `{ error }`（见 [backend/error-handling.md](../backend/error-handling.md)）转成 `error` 字符串；后端 `saveState()` 静默吞写失败时，前端仍可能显示成功 `notice`。
+- 前端把后端的 `{ error }`（见 [backend/error-handling.md](../backend/error-handling.md)）转成 `error` 字符串；后端 `saveState()` 写失败只在 `stderr` 告警、不改变响应码，前端仍可能显示成功 `notice`。
 - `notice` 文案里硬编码了 SOP 名（`:152` 的「标准 Feature 开发流 / Bug 修复流」），与 `SOP_TEMPLATE_LABELS`（`src/utils/statusStyles.ts:76`）并存，存在重复。
 
 ## 常见错误

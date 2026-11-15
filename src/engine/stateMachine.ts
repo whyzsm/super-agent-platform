@@ -53,7 +53,7 @@ export function transitionTaskVerification(
       id: `ckpt-${node.id}-${Date.now()}`,
       taskId: node.id,
       gateType,
-      summaryMd: `确定性门禁（Lint / Typecheck / 单测）与交叉审查已全部通过。\n\n${logs}`,
+      summaryMd: `确定性门禁已通过（实际执行项以 verifierChecks 为准）。\n\n${logs}`,
       status: 'WAITING',
       createdAt: nowIso,
     };

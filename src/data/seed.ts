@@ -22,7 +22,7 @@ export function createInitialSeedState(): PlatformState {
       title: '企业微信 / 飞书 IM 网关与 ACP 双向高危拦截接入',
       specMd:
         '### 需求背景\n打通企业微信与飞书群聊机器人触发研发流水线能力，并在 Local Daemon 执行高危命令前通过 ACP 双向协议推送 Danger Gate 审批卡片。\n\n### 验收标准\n1. IM 卡片支持批准放行 / 附带意见打回 / 终止任务，回调具备幂等校验。\n2. Local Daemon 隔离 worktree 内执行 lint + typecheck + 单测全绿后再由异构模型 Reviewer 交叉审查。\n3. 出站 L0 日志必须完成密钥与 PII 正则脱敏。',
-      repoUrl: 'git@code.internal:superagent/platform-core.git',
+      repoUrl: 'git@example.invalid:superagent/platform-core.git',
       baseBranch: 'main',
       sourceChannel: 'wecom',
       sopTemplate: 'feature_flow',
@@ -36,7 +36,7 @@ export function createInitialSeedState(): PlatformState {
       title: '支付对账流水异步幂等重构与死信重放',
       specMd:
         '### 需求背景\n将日终对账单解析拆分为独立并发 Worktree 任务，修复并发写入竞态并补齐幂等键约束。\n\n### 验收标准\n1. 唯一索引 `(merchant_id, settle_date, batch_seq)` 防止重复入账。\n2. 支持指数退避重放与人工熔断恢复。',
-      repoUrl: 'git@code.internal:fintech/reconcile-engine.git',
+      repoUrl: 'git@example.invalid:fintech/reconcile-engine.git',
       baseBranch: 'release/v2.4',
       sourceChannel: 'web',
       sopTemplate: 'bugfix_flow',
@@ -50,7 +50,7 @@ export function createInitialSeedState(): PlatformState {
       title: 'Memory Hub pgvector HNSW 召回与四级 ACL 过滤',
       specMd:
         '### 需求背景\n为 MCP Tool 召回接口增加 Team / Project / User / Agent 四级 ACL 权限过滤，防止跨项目私有方案泄露。\n\n### 验收标准\n1. HNSW 检索延迟 P95 < 45ms。\n2. 仅允许 status=published 资产参与团队自动注入。',
-      repoUrl: 'git@code.internal:superagent/memory-hub.git',
+      repoUrl: 'git@example.invalid:superagent/memory-hub.git',
       baseBranch: 'main',
       sourceChannel: 'cli',
       sopTemplate: 'feature_flow',
@@ -567,7 +567,7 @@ export function createInitialSeedState(): PlatformState {
   const daemons: DaemonRunner[] = [
     {
       machineId: 'mac-studio-sh-01',
-      hostname: 'sh-build-mac-01.internal',
+      hostname: 'build-mac-01.example.invalid',
       os: 'macOS 15.2 (arm64)',
       status: 'online',
       providers: ['codex', 'claude-code', 'workbuddy'],
@@ -599,7 +599,7 @@ export function createInitialSeedState(): PlatformState {
     },
     {
       machineId: 'ubuntu-ci-runner-04',
-      hostname: 'runner-sz-04.prod.internal',
+      hostname: 'runner-04.example.invalid',
       os: 'Ubuntu 24.04 LTS (x86_64)',
       status: 'online',
       providers: ['codex', 'workbuddy', 'opencode'],
@@ -631,7 +631,7 @@ export function createInitialSeedState(): PlatformState {
     },
     {
       machineId: 'thinkpad-dev-chen',
-      hostname: 'chenhao-t14.local',
+      hostname: 'dev-laptop-01.example.invalid',
       os: 'Ubuntu 24.04 (WSL2)',
       status: 'reconnecting',
       providers: ['opencode', 'claude-code'],

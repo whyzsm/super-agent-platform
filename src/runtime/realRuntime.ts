@@ -1,5 +1,5 @@
 import { appendRuntimeEvent } from './eventLog';
-import { runLintVerifier } from './verifier';
+import { runRealVerifier } from './verifier';
 import type { DagNode, VerifierCheck } from '../protocol';
 
 /**
@@ -23,7 +23,7 @@ export function runRealVerification(
   repoRoot: string = process.cwd(),
 ): RealVerificationOutcome {
   const traceId = `verify-${task.id}-${Date.now()}`;
-  const result = runLintVerifier(repoRoot);
+  const result = runRealVerifier(repoRoot);
   appendRuntimeEvent({
     traceId,
     type: 'VERIFY_RESULT',

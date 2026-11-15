@@ -2,6 +2,7 @@
 
 > 状态：供评审 / 不含实现代码
 > 日期：2026-11-15
+> 状态注记（后续实施）：本稿第 1、2、12 章的「现状核实」是 `8eae911` 基线的调研快照，保留原貌；此后已落地 P0 垂直切片、状态机补 3 态、真实 verifier 扩展、IM secret env 注入与 state 脱敏。当前事实以 `.trellis/spec/` 与 `docs/superagent-implementation-plan-v1.md` 为准。
 > 基线：`whyzsm/super-agent-platform` `main` @ `8eae91103cf821bb26c80d607bc27ad0a4483d57`（仅有 main 分支）
 > 讨论范围：团队化协作、团队记忆云端化与共同成长、N 个 agent 分工协作、需求到研发完成的自动 loop
 

@@ -43,7 +43,12 @@ import type {
 
 const PORT = 3000;
 const STATE_FILE = path.resolve(process.cwd(), '.superagent-state.json');
-const IM_WEBHOOK_SECRET = process.env.IM_WEBHOOK_SECRET || 'superagent-dev-im-secret';
+const IM_WEBHOOK_SECRET = process.env.IM_WEBHOOK_SECRET;
+if (!IM_WEBHOOK_SECRET) {
+  console.warn(
+    '[SuperAgent] IM_WEBHOOK_SECRET is not configured; IM webhook endpoints will return 503.',
+  );
+}
 
 function syncTeamAiFileToDisk(relPath: string, content: string): void {
   if (!relPath.startsWith('.teamai/')) return;
@@ -76,8 +81,10 @@ function loadOrInitState(): PlatformState {
 function saveState(state: PlatformState): void {
   try {
     fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf-8');
-  } catch {
-    // Ignore disk write failure in read-only sandboxes
+  } catch (err) {
+    console.error(
+      `[saveState] failed to write ${STATE_FILE}: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
 
@@ -223,7 +230,7 @@ async function startServer() {
       teamId: 'team-platform-core',
       title: title.trim(),
       specMd: specMd.trim(),
-      repoUrl: (repoUrl || 'git@code.internal:superagent/app-service.git').trim(),
+      repoUrl: (repoUrl || 'git@example.invalid:superagent/app-service.git').trim(),
       baseBranch: (baseBranch || 'main').trim(),
       sourceChannel: sourceChannel || 'web',
       sopTemplate: template,
@@ -588,7 +595,7 @@ async function startServer() {
           const real = runRealVerification(task);
           checks = real.checks;
           verifyPassed = real.passed;
-          verifyLogs = real.logs.trim() || 'npm run lint 无输出';
+          verifyLogs = real.logs.trim() || '确定性门禁未产生输出';
           recordStateTransition(task, 'RUNNING', 'VERIFYING', real.traceId);
           task.terminalLines.push(
             `[real-verifier] ${verifyPassed ? 'PASS' : 'FAIL'} (${real.traceId})`,
@@ -613,7 +620,7 @@ async function startServer() {
             : '真实确定性门禁未通过，已回灌日志并打回重试',
           detail: verifyPassed
             ? isRealRuntimeEnabled()
-              ? 'npm run lint 退出码 0'
+              ? 'npm run lint + npm test 真实退出码均为 0'
               : 'lint + typecheck + unit_test + 异构 Reviewer 交叉审查通过'
             : verifyLogs.slice(0, 500),
           status: verifyPassed ? 'ok' : 'failed',
@@ -1187,6 +1194,10 @@ ${stepLines}
   });
 
   app.get('/api/webhooks/im/card/:taskId', (req, res) => {
+    if (!IM_WEBHOOK_SECRET) {
+      res.status(503).json({ error: 'IM_WEBHOOK_SECRET is not configured' });
+      return;
+    }
     const task = state.tasks.find((t) => t.id === req.params.taskId);
     const requirement = task
       ? state.requirements.find((r) => r.id === task.reqId)
@@ -1218,6 +1229,10 @@ ${stepLines}
   });
 
   app.post('/api/webhooks/im', (req, res) => {
+    if (!IM_WEBHOOK_SECRET) {
+      res.status(503).json({ error: 'IM_WEBHOOK_SECRET is not configured' });
+      return;
+    }
     const { rawBody, signature } = req.body as {
       rawBody?: string;
       signature?: string;

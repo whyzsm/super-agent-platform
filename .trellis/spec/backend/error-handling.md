@@ -1,6 +1,6 @@
 # 错误处理
 
-> 后端用极简约定：端点返回统一 `{ error: string }` + HTTP 状态码；多处 `try/catch` 静默吞掉异常，没有自定义错误类型或日志框架。
+> 后端用极简约定：端点返回统一 `{ error: string }` + HTTP 状态码；多处 `try/catch` 静默吞掉异常（`saveState()` 已改为 `console.error` 显式告警），没有自定义错误类型或日志框架。
 
 ---
 
@@ -32,7 +32,7 @@
 - `saveState()`（`server.ts:67`）与 `syncTeamAiFileToDisk()`（`:38`）的 `catch {}` 只留注释、不记录、不重抛：写盘失败对调用方完全不可见。
 - `loadOrInitState()`（`:50`）解析失败静默回退种子态，损坏的状态文件不会告警。
 - `broadcastEnvelope()`（`:79`）单个 SSE 客户端写失败时仅从 `Set` 删除该连接。
-- `IM_WEBHOOK_SECRET`（`server.ts:37`）默认硬编码 `'superagent-dev-im-secret'`，未配置环境变量时仍可启动。
+- `IM_WEBHOOK_SECRET`（`server.ts:46`）只从 `process.env` 注入、无默认回退；缺失时两个 IM webhook 端点返回 `503 { error: 'IM_WEBHOOK_SECRET is not configured' }`，启动时打印一次性告警。
 - 前端配套做法见 [frontend/state-management.md](../frontend/state-management.md)：store 把 `body.error || HTTP ${res.status}` 转成 `error` 字段。
 
 ## 常见错误

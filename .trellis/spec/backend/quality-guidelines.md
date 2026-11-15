@@ -27,10 +27,10 @@
 ## 当前实现状态（诚实标注）
 
 - `tsconfig.json` 未开 `strict: true`（有 `noEmit`、`moduleResolution: bundler`、`jsx: react-jsx`、`paths @/*`）；类型检查偏宽松。
-- `verifierChecks` 在**默认演示态**仍硬编码 `passed: true`；`SUPERAGENT_REAL_RUNTIME=1` 时改为 `npm run lint` 的真实退出码，且只产出 `lint` 一项、其余检查不伪造为通过。详见 [real-runtime.md](./real-runtime.md)。
-- `saveState()` 静默吞写失败；`IM_WEBHOOK_SECRET` 默认硬编码明文（`server.ts:37`）。
+- `verifierChecks` 在**默认演示态**仍硬编码 `passed: true`；`SUPERAGENT_REAL_RUNTIME=1` 时由 `runRealVerifier()` 真实执行 `npm run lint` + `npm test`，只产出 `lint` / `unit_test` 两项，`typecheck` / `cross_review` 无真实执行手段故不产出（不伪造通过）。详见 [real-runtime.md](./real-runtime.md)。
+- `saveState()` 写失败已改为 `console.error` 显式告警（`server.ts:81`）；`IM_WEBHOOK_SECRET` 已改为 env 注入、缺失返回 503（`server.ts:46`）；`tsconfig` 仍未开 `strict`。
 - `syncedToGit` 为 `true` 但无 git 操作；`worktreePath` / `worktreeBranch` 只是字符串字段。
-- `.superagent-state.json` 含内部 hostname 与模拟数据且被提交进仓库。
+- `.superagent-state.json` 工作树已脱敏并停止跟踪，但 **`8eae911` 起的 git 历史仍含内部 hostname**（Q11 未清理历史）。
 
 ## 代码审查清单
 
