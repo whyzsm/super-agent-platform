@@ -10,6 +10,7 @@ import type { IdentityProvider, Principal } from '../identity/types';
 import { createAuditLog, type AuditLog } from '../identity/audit';
 import { createCommandBus, type LoopCommandKind } from '../loop/commandBus';
 import { createEventLog, type EventLog } from '../runtime/eventLog';
+import { createTracing, isTracingEnabled, type TracingHandle } from '../runtime/tracing';
 import { parseGateTier, type GateApprovalTier, type GateTierConfig } from '../policy/gateTiers';
 import type { DaemonEnvelope } from '../protocol';
 
@@ -51,6 +52,9 @@ export interface ServerContext {
   /** 运行轨迹旁路日志（.superagent-events.jsonl，落在 dataDir）；单进程单写者前提不变 */
   readonly eventLog: EventLog;
 
+  /** OTel 追踪句柄（S3-6）；SUPERAGENT_TRACING=1 启用，缺省 undefined 零开销 */
+  readonly tracing?: TracingHandle;
+
   /** git 仓库根（worktree / verifier 的执行目录），测试可指向临时仓库 */
   readonly repoRoot: string;
   /** agent 工作树根目录，默认 <repoRoot>/.worktrees */
@@ -85,6 +89,10 @@ export interface ServerContextOptions {
    * 注意：注入方负责先调一次 init()（建表）。
    */
   stateStore?: StateStore;
+  /** OTel 追踪（S3-6）：true 或经 env SUPERAGENT_TRACING=1 启用 */
+  tracing?: boolean;
+  /** 覆盖追踪输出文件（默认 <dataDir>/.superagent-traces.jsonl） */
+  tracesFile?: string;
 }
 
 function loadOrInitState(store: StateStore, statePath: string): PlatformState {
@@ -137,6 +145,13 @@ export function createServerContext(options: ServerContextOptions = {}): ServerC
   const eventLog = createEventLog({
     path: path.join(dataDir, '.superagent-events.jsonl'),
   });
+  const tracingEnabled = options.tracing ?? isTracingEnabled(process.env.SUPERAGENT_TRACING);
+  const tracing = tracingEnabled
+    ? createTracing({
+        filePath: options.tracesFile ?? path.join(dataDir, '.superagent-traces.jsonl'),
+        registerGlobal: true,
+      })
+    : undefined;
 
   const imWebhookSecret = options.imWebhookSecret ?? process.env.IM_WEBHOOK_SECRET;
   const gateTierConfig: GateTierConfig = {
@@ -155,6 +170,7 @@ export function createServerContext(options: ServerContextOptions = {}): ServerC
     auditLog,
     commandBus,
     eventLog,
+    tracing,
     state,
     seq,
     sseClients,

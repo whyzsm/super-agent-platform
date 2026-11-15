@@ -129,6 +129,17 @@
 - 验证：契约测试 7 条（往返/结构无效抛错/幂等/注入/tablePrefix 隔离/不可达显式抛错；PG 不可达环境整套 skip 不伪造）；**PG 后端起服务跑冒烟 57-57**；冒烟后 PG 快照实测 3 需求/8 任务/1 命令。
 - 边界：psql 进程桥接不适合高并发生产（每次 spawn ~30ms + 无连接复用）——生产应换 node-postgres 异步实现并顺势把 StateStore 契约异步化；单写者前提与文件实现一致。
 
+## D-2026-11-16-14 S3-6 第一步：OTel NDJSON 导出，零外部服务
+
+- 背景：S3-6「OTel GenAI trace / Langfuse」整项按「需自托管实例」挂起；但 OTel 第一步（真实 span 结构 + SDK 管线）不需要任何外部服务。
+- 决策：
+  1. 依赖只加 OTel 官方基础包（api / sdk-trace-base@2.12.1 / sdk-trace@2.12.1 / core@2.12.1 / resources，版本显式锁 2.x 同线——不锁会解析到 core@3 触发 peer 冲突）。
+  2. `src/runtime/tracing.ts`：自定义 SpanExporter 把 ReadableSpan 写成 `.superagent-traces.jsonl` 单行 JSON（traceId/spanId/parentSpanId/attributes/durationMs/status/serviceName）；SimpleSpanProcessor 每 span 立即落盘。后续接 Langfuse/OTLP 只换导出器，span 产生侧不动。
+  3. 开关 `SUPERAGENT_TRACING=1`（默认关，零行为差异）；输出文件 `SUPERAGENT_TRACES_FILE` 可覆盖。
+  4. span 产生点在真实运行时语义处：`superagent.verify`（真实 verifier 结果、taskId、passed、checks 数）与 `superagent.state_transition`（from/to）。
+  5. 边界（诚实标注）：未注册 OTel context manager（避免再增依赖），startActiveSpan 自动父子传播不可用，嵌套 span 需显式 setSpan 传 context（测试与注释已固化）；GenAI 语义约定（gen_ai.* 属性）留待接 Langfuse 时对齐。
+- 验证：4 条单测（开关矩阵、端到端落盘字段、显式父子、未 end 不写盘）；**tracing 开启的服务跑冒烟 57-57，真实 verifier 产生 2 个真实 span 落盘**（superagent.verify passed=True 含 taskId）。
+
 ## D-2026-11-16-03 S1-1 拆分形态（补记，上轮已按此执行）
 
 - 决策：`server.ts` 拆为启动引导 + `src/server/` 9 个域模块；共享闭包收敛为 `ServerContext`（`state`/`seq` 盒子）；handler verbatim 迁移，不趁机混入 S3-2 模板注册表。

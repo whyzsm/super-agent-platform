@@ -1,4 +1,5 @@
 import { appendRuntimeEvent, type EventLog } from './eventLog';
+import type { Tracer } from '@opentelemetry/api';
 import { runRealVerifier } from './verifier';
 import type { DagNode, VerifierCheck } from '../protocol';
 
@@ -29,9 +30,19 @@ export function runRealVerification(
   task: DagNode,
   repoRoot: string = process.cwd(),
   eventLog?: EventLog,
+  tracer?: Tracer,
 ): RealVerificationOutcome {
   const traceId = `verify-${task.id}-${Date.now()}`;
+  const span = tracer?.startSpan('superagent.verify', {
+    attributes: { 'superagent.taskId': task.id, 'superagent.provider': task.provider },
+  });
   const result = runRealVerifier(repoRoot);
+  span?.setAttributes({
+    'superagent.traceId': traceId,
+    'superagent.checks': result.checks.length,
+    'superagent.passed': result.passed,
+  });
+  span?.end();
   const log = eventLog ?? { append: appendRuntimeEvent };
   log.append({
     traceId,
@@ -48,7 +59,11 @@ export function recordStateTransition(
   to: string,
   traceId?: string,
   eventLog?: EventLog,
+  tracer?: Tracer,
 ): void {
+  tracer?.startSpan('superagent.state_transition', {
+    attributes: { 'superagent.taskId': task.id, 'from': from, 'to': to },
+  })?.end();
   (eventLog ?? { append: appendRuntimeEvent }).append({
     traceId: traceId ?? `run-${task.id}`,
     type: 'STATE_TRANSITION',

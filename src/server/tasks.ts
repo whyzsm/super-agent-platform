@@ -84,7 +84,8 @@ function maybeAutoReleaseGate(ctx: ServerContext, task: DagNode): void {
 
 /** 任务域路由：advance / simulate / gate / ndjson / input / comments / resource-transition / retrospective。 */
 export function registerTaskRoutes(app: Express, ctx: ServerContext): void {
-  const { state, seq, saveState, broadcastEnvelope, recomputeRequirementStatus, commandBus, repoRoot, eventLog } = ctx;
+  const { state, seq, saveState, broadcastEnvelope, recomputeRequirementStatus, commandBus, repoRoot, eventLog, tracing } = ctx;
+  const tracer = tracing?.tracer;
 
   app.post('/api/tasks/:id/advance', (req, res) => {
     const task = state.current.tasks.find((t) => t.id === req.params.id);
@@ -170,11 +171,11 @@ export function registerTaskRoutes(app: Express, ctx: ServerContext): void {
         let verifyLogs = 'lint / typecheck / unit_test / cross_review 全部通过。';
 
         if (isRealRuntimeEnabled()) {
-          const real = runRealVerification(task, repoRoot, eventLog);
+          const real = runRealVerification(task, repoRoot, eventLog, tracer);
           checks = real.checks;
           verifyPassed = real.passed;
           verifyLogs = real.logs.trim() || '确定性门禁未产生输出';
-          recordStateTransition(task, 'RUNNING', 'VERIFYING', real.traceId, eventLog);
+          recordStateTransition(task, 'RUNNING', 'VERIFYING', real.traceId, eventLog, tracer);
           task.terminalLines.push(
             `[real-verifier] ${verifyPassed ? 'PASS' : 'FAIL'} (${real.traceId})`,
           );

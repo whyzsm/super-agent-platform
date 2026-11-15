@@ -35,6 +35,12 @@
 | CLI 链路自检 | `real-spawn` 返回 201；按 `traceId` 重放得到 4 条事件（SPAWN + 3×AGENT_EVENT），`seq` 连续无重复 |
 | 清理后 | `npm run lint` 退出码 0；`git diff --stat` 仅 `server.ts`，另新增 `src/runtime/` 4 文件 |
 
+## OTel 追踪（S3-6 第一步，D-14）
+
+- `src/runtime/tracing.ts`：真实 OTel SDK span + NDJSON 文件导出（`.superagent-traces.jsonl`），`SUPERAGENT_TRACING=1` 启用（默认关零行为差异）。
+- span 产生点：`superagent.verify`（realRuntime.runRealVerification，真实退出码结果）与 `superagent.state_transition`；接 Langfuse/OTLP 时只换 `createNdjsonSpanExporter` 为 OTLP exporter。
+- 边界：未注册 context manager，自动父子传播不可用（嵌套需显式 setSpan 传 context）；GenAI 语义属性（gen_ai.*）待接 Langfuse 时对齐。
+
 ## 已知债务 / deferred
 
 - **真实模型 CLI 集成未验证**：`codex exec` 与 `claude -p --output-format stream-json` 的登录态、返回码、事件行结构未实测；验收用本地 `node -e` NDJSON 源做链路自检，不以模拟结果顶替真实调用。详见任务 `research/cli-probe.md`。
