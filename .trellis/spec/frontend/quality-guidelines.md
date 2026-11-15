@@ -22,7 +22,7 @@
 
 ## 验证命令（只写真实存在的）
 
-- `npm run lint` → `tsc --noEmit`；`npm test` → `node --import tsx --test "src/**/*.test.ts"`（197 个用例全绿）。`package.json` 仍没有 `typecheck` 脚本。
+- `npm run lint` → `tsc --noEmit`；`npm test` → `node --import tsx --test "src/**/*.test.ts"`（273 个用例全绿；前端纯逻辑见 `src/utils/statusStyles.test.ts`——零依赖 node:test，组件渲染层仍无 DOM 测试设施，诚实标注）。`package.json` 仍没有 `typecheck` 脚本。
 - `.teamai/hooks/pre-merge-gate.sh` 与 `.teamai/AGENTS.md` 要求 `pnpm lint && pnpm typecheck && pnpm test --run`，**与本仓库脚本仍不一致**，详见 [guides/team-assets.md](../guides/team-assets.md)。
 - 4 个 `node:test` 测试都在 `src/engine|daemon|gateway|memory/`（后端 / 共享纯逻辑），前端没有任何测试；新增前端测试直接放进 `src/**/*.test.ts` 即可被 `npm test` 收集。
 
