@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { redactSecrets } from '../engine/stateMachine';
+import { redactSecrets } from '../policy/engine';
 import type { VerifierCheck } from '../protocol';
 
 /**

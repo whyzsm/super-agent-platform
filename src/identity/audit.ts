@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import nodePath from 'node:path';
-import { redactSecrets } from '../engine/stateMachine';
+import { redactSecrets } from '../policy/engine';
 import type { Action, AuditEntry } from './types';
 
 // ============================================================================

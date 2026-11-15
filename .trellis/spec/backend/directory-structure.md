@@ -18,7 +18,7 @@
 │   ├── server/                  # 路由层（S1-1 拆分，全部端点在此）
 │   │   ├── context.ts           # ServerContext：state/seq 盒子 + 四端口实例 +
 │   │   │                        #   saveState/broadcast/recompute/unlock/reset/syncTeamAi
-│   │   ├── middleware.ts        # ROUTE_ACTIONS + RBAC/审计/commandId 幂等（fail-closed）
+│   │   ├── middleware.ts        # RBAC/审计/commandId 幂等中间件（动作表在 src/policy/）
 │   │   ├── app.ts               # createApp(ctx)：装配、health/bootstrap/stream/reset、
 │   │   │                        #   JSON-RPC -32700 错误边界
 │   │   ├── tasks.ts             # advance/simulate×2/gate/ndjson/input/comments/
@@ -34,6 +34,11 @@
 │   ├── engine/stateMachine.ts   # 纯函数：状态机 / DAG / 预算 / 门禁 / 脱敏 / SOP 解析
 │   ├── daemon/ndjsonParser.ts   # CLI NDJSON 解析 + OfflineSeqQueue
 │   ├── gateway/imWebhook.ts     # HMAC 验签 + 审批卡片
+│   ├── policy/                  # 策略规则集（S2-9）：危险命令/脱敏/白名单/路由动作
+│   │   ├── rules.ts              # 声明式规则数据（改规则只看这里）
+│   │   ├── engine.ts             # detectDangerousCommand / redactSecrets 求值
+│   │   ├── routeActions.ts       # actionFor（exempt / read 兜底 / 写 fail-closed）
+│   │   └── policy.test.ts        # 逐规则正反例 + 不变量
 │   ├── memory/recallEngine.ts   # trigram 召回 + 四级 ACL
 │   └── utils/statusStyles.ts    # 展示映射（前端消费）
 ├── .teamai/                     # 团队资产：AGENTS.md / rules / skills / hooks
@@ -45,7 +50,7 @@
 ## 落点规则
 
 - **端点 handler** 只写 `src/server/<域>.ts` 的 `register<X>Routes(app, ctx)`；不要往 `server.ts` 回堆路由。
-- **新写路由必须同步登记** `src/server/middleware.ts` 的 `ROUTE_ACTIONS`，否则写方法 fail-closed 403（设计行为，不是 bug）。
+- **新写路由必须同步登记** `src/policy/rules.ts` 的 `ROUTE_ACTIONS`，否则写方法 fail-closed 403（设计行为，不是 bug）。
 - **跨 handler 共享的可变状态只经 `ServerContext`**：`state` / `seq` 是盒子（`{ current }`）。`POST /api/reset` 会整体替换 `state.current`，任何读取方（含 `memory.ts` 的 mcpContext 惰性闭包）必须实时读 `.current`，**禁止解构缓存 PlatformState 本身**。
 - **HTTP 测试**补进 `src/server/http.test.ts`：每个用例经 `startTestApp()` 自建隔离实例（临时 dataDir + 临时 git 仓 + `listen(0)`），不复用全局状态。
 - **无副作用纯逻辑**抽到 `src/<domain>/*.ts`，命名导出；跨前后端类型只从 `src/protocol/index.ts` 引入。
@@ -56,7 +61,7 @@
 | 文件 | 符号 / 行为 |
 |------|-------------|
 | `src/server/context.ts` | `createServerContext` / `ServerContext.state.current` / `resetState` |
-| `src/server/middleware.ts` | `ROUTE_ACTIONS` / `actionFor` / `createRbacMiddleware` |
+| `src/server/middleware.ts` | `createRbacMiddleware`（`actionFor` 来自 `src/policy/routeActions.ts`） |
 | `src/server/app.ts` | `createApp` / `GET /api/stream` / JSON-RPC `-32700` 错误边界 |
 | `server.ts` | `startServer`（vite/static 装配 + `app.listen` + 心跳定时器） |
 

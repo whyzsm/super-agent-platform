@@ -6,7 +6,7 @@
 
 ## 何时适用
 
-改动 `src/server/` 任意路由、`server.ts` 启动引导、或 `src/engine`、`src/daemon`、`src/gateway`、`src/memory`、`src/data/seed.ts` 时，先读本目录规范。
+改动 `src/server/` 任意路由、`server.ts` 启动引导、`src/policy/` 策略规则、或 `src/engine`、`src/daemon`、`src/gateway`、`src/memory`、`src/data/seed.ts` 时，先读本目录规范。
 
 ## 当前实现状态（务必先读）
 
@@ -15,7 +15,7 @@
 - 真实 CLI 通过 `createHeadlessJsonAdapter()` spawn，但 `real-spawn` 强制要求显式 `SUPERAGENT_CLI_COMMAND`，不会默认发起模型调用；未实测登录态与额度。
 - `worktreePath` 由 `git worktree add` **真实落盘**（`src/workspace/worktreeManager.ts`，端点 `POST/DELETE /api/tasks/:id/worktree`），创建后替换为绝对路径；种子数据里的 `~/.superagent/...` 只是未创建前的占位。详见 [workspace-worktree.md](./workspace-worktree.md)。
 - `syncedToGit` **恒为 false**（无 git commit / MR，本地写盘不等于同步）。`/api/mcp` 是**标准 MCP JSON-RPC 2.0 端点**（`src/mcp/server.ts`），`/api/mcp/recall` 仅作旧 HTTP 调用方兼容。详见 [mcp-server.md](./mcp-server.md)。
-- RBAC 采用**显式路由动作表 + 写操作 fail-closed**：写方法未在 `ROUTE_ACTIONS` 登记即 403，不再默认落到 `task:advance`。
+- RBAC 采用**显式路由动作表 + 写操作 fail-closed**：写方法未在 `ROUTE_ACTIONS`（`src/policy/rules.ts`）登记即 403，不再默认落到 `task:advance`。
 
 ## 文件导航
 
@@ -30,10 +30,11 @@
 | [platform-ports.md](./platform-ports.md) | 三端口（StateStore / IdentityProvider / CommandBus）、RBAC、审计与新端点 |
 | [workspace-worktree.md](./workspace-worktree.md) | M14 真实 git worktree：路径校验、幂等、排除规则、端点与失败语义 |
 | [mcp-server.md](./mcp-server.md) | MCP JSON-RPC 2.0：方法集、错误码、参数校验、stdio 桥与兼容入口 |
+| [policy-rules.md](./policy-rules.md) | 策略规则集（S2-9）：危险命令 / 脱敏 / worktree 白名单 / 路由动作表 |
 
 ## 证据文件
 
-- `src/server/context.ts` `createServerContext`、`src/server/middleware.ts` `ROUTE_ACTIONS`、`src/server/app.ts` `createApp`；启动引导见 `server.ts` `startServer`。
+- `src/server/context.ts` `createServerContext`、`src/server/middleware.ts` `createRbacMiddleware`（动作表在 `src/policy/rules.ts`）、`src/server/app.ts` `createApp`；启动引导见 `server.ts` `startServer`。
 - `src/engine/stateMachine.ts`、`src/daemon/ndjsonParser.ts`、`src/gateway/imWebhook.ts`、`src/memory/recallEngine.ts`。
 
 ## 验证命令

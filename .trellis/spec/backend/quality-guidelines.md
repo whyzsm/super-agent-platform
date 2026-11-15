@@ -10,8 +10,9 @@
 
 ## 本地模式（required patterns）
 
-- 业务逻辑写成**无副作用纯函数**并命名导出，便于 `node:test` 直接断言：`src/engine/stateMachine.ts` 的 `canTransition`、`getReadyDagNodes`（上游全部 `MERGED` 才解锁）、`transitionTaskVerification`、`recordUsageAndCheckBudget`（token 预算熔断）、`resolveGateDecision`、`detectDangerousCommand`（4 条规则：`rm -rf /`、`DROP TABLE/DATABASE`、`git push --force`、敏感路径）、`redactSecrets`（6 类正则：`sk-`、`ghp_`、`AKIA`、`Bearer`、DB 连接串、邮箱）、`parseSkillFrontmatter`、`extractSkillDraft`。
-- 安全逻辑集中在 `src/gateway/imWebhook.ts`（HMAC + `timingSafeEqual` + 300s 窗口）与 `src/memory/recallEngine.ts`（`recallMemoryAssets` 只召回 `status === 'published'`，`findMatchedAcl` 四级 ACL，trigram Jaccard + 0.35 关键词加权）。
+- 业务逻辑写成**无副作用纯函数**并命名导出，便于 `node:test` 直接断言：`src/engine/stateMachine.ts` 的 `canTransition`、`getReadyDagNodes`（上游全部 `MERGED` 才解锁）、`transitionTaskVerification`、`recordUsageAndCheckBudget`（token 预算熔断）、`resolveGateDecision`、`parseSkillFrontmatter`、`extractSkillDraft`。
+- 安全策略集中在 `src/policy/`（S2-9，见 [policy-rules.md](./policy-rules.md)）：`detectDangerousCommand`（4 条危险命令规则）与 `redactSecrets`（6 条脱敏规则：`sk-`、`ghp_`、`AKIA`、`Bearer`、DB 连接串、邮箱）在 `engine.ts` 求值，规则数据在 `rules.ts`（含 worktree 白名单与 `ROUTE_ACTIONS`）。
+- 其余安全逻辑在 `src/gateway/imWebhook.ts`（HMAC + `timingSafeEqual` + 300s 窗口）与 `src/memory/recallEngine.ts`（`recallMemoryAssets` 只召回 `status === 'published'`，`findMatchedAcl` 四级 ACL，trigram Jaccard + 0.35 关键词加权）。
 - 测试文件与被测模块同目录并列，用 `import test from 'node:test'` + `import assert from 'node:assert/strict'`，并用 `makeNode()` 之类的工厂造数据（见 `src/engine/stateMachine.test.ts:15`）。
 
 ## 证据文件（测试与被测模块同目录并列）

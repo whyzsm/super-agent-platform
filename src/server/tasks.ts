@@ -1,12 +1,11 @@
 import type { Express } from 'express';
 import {
-  detectDangerousCommand,
   extractSkillDraft,
   recordUsageAndCheckBudget,
-  redactSecrets,
   resolveGateDecision,
   transitionTaskVerification,
 } from '../engine/stateMachine';
+import { detectDangerousCommand, redactSecrets } from '../policy/engine';
 import { parseCliNdjsonLine } from '../daemon/ndjsonParser';
 import { computeMaxDuplicateScore } from '../memory/recallEngine';
 import type { VerifierCheck } from '../protocol';

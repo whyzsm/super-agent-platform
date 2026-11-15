@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { OfflineSeqQueue, parseCliNdjsonLine } from './ndjsonParser';
-import { detectDangerousCommand } from '../engine/stateMachine';
+import { detectDangerousCommand } from '../policy/engine';
 
 test('parseCliNdjsonLine parses Codex edit events and redacts embedded secrets', () => {
   const line = JSON.stringify({

@@ -1,51 +1,8 @@
 import type { NextFunction, Request, RequestHandler, Response as ExpressResponse } from 'express';
-import type { Action, Principal } from '../identity/types';
+import type { Principal } from '../identity/types';
 import { isAllowed } from '../identity/rbac';
+import { actionFor } from '../policy/routeActions';
 import type { ServerContext } from './context';
-
-/**
- * 显式路由动作表：每条路由登记它需要的 Action。
- *
- * 历史教训（handoff 缺陷 #2）：`actionFor()` 曾对未登记路由默认返回 `task:advance`，
- * 导致只读端点要求写权限、`/api/reset` 任何开发者都能调。现在写操作未登记时
- * fail-closed（403 + 审计 denied），新增写端点必须在此登记。
- */
-const ROUTE_ACTIONS: Array<[method: string, re: RegExp, action: Action]> = [
-  ['GET', /^\/api\/(health|bootstrap|stream)$/, 'read'],
-  ['GET', /^\/api\/runtime\/(audit|commands)$/, 'read'],
-  ['GET', /^\/api\/runtime\/events$/, 'runtime:events'],
-  ['GET', /^\/api\/webhooks\/im\/card\/[^/]+$/, 'read'],
-  ['POST', /^\/api\/requirements$/, 'requirement:create'],
-  ['POST', /^\/api\/requirements\/[^/]+\/solidify-sop$/, 'teamai:write'],
-  ['POST', /^\/api\/tasks\/[^/]+\/advance$/, 'task:advance'],
-  ['POST', /^\/api\/tasks\/[^/]+\/input$/, 'task:advance'],
-  ['POST', /^\/api\/tasks\/[^/]+\/comments$/, 'task:advance'],
-  ['POST', /^\/api\/tasks\/[^/]+\/resource-transition$/, 'task:advance'],
-  ['POST', /^\/api\/tasks\/[^/]+\/simulate-(failure|danger)$/, 'task:advance'],
-  ['POST', /^\/api\/tasks\/[^/]+\/gate$/, 'task:gate'],
-  ['POST', /^\/api\/tasks\/[^/]+\/retrospective$/, 'read'],
-  ['POST', /^\/api\/tasks\/[^/]+\/real-spawn$/, 'runtime:spawn'],
-  ['POST', /^\/api\/tasks\/[^/]+\/ndjson$/, 'runtime:spawn'],
-  ['POST', /^\/api\/daemons\/[^/]+\/replay$/, 'runtime:spawn'],
-  ['POST', /^\/api\/mcp$/, 'read'],
-  ['POST', /^\/api\/mcp\/recall$/, 'read'],
-  ['POST', /^\/api\/memories\/[^/]+\/(approve|reject)$/, 'memory:approve'],
-  ['POST', /^\/api\/teamai$/, 'teamai:write'],
-  ['PUT', /^\/api\/teamai$/, 'teamai:write'],
-  ['POST', /^\/api\/tasks\/[^/]+\/worktree$/, 'runtime:spawn'],
-  ['DELETE', /^\/api\/tasks\/[^/]+\/worktree$/, 'runtime:spawn'],
-  ['POST', /^\/api\/reset$/, 'admin:reset'],
-];
-
-export function actionFor(method: string, url: string): Action | 'exempt' | null {
-  // IM 回调由 HMAC-SHA256 + 300s 防重放独立鉴权，豁免 RBAC。
-  if (method === 'POST' && url === '/api/webhooks/im') return 'exempt';
-  for (const [m, re, action] of ROUTE_ACTIONS) {
-    if (m === method && re.test(url)) return action;
-  }
-  // 只读方法兜底为 read（不扩大权限面）；写方法未登记则返回 null（调用方 fail-closed）。
-  return method === 'GET' ? 'read' : null;
-}
 
 /**
  * 本地身份 / RBAC / 不可变审计 / 幂等命令 前置中间件。

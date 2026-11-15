@@ -60,7 +60,7 @@ Q5 红线在协议层同样生效：MCP 不提供任何写工具，`recall_memor
 
 ## RBAC 与签名
 
-- `POST /api/mcp` 在 `ROUTE_ACTIONS` 里登记为 `read`——这是只读端点，viewer 也可调用。
+- `POST /api/mcp` 在 `ROUTE_ACTIONS`（`src/policy/rules.ts`）里登记为 `read`——这是只读端点，viewer 也可调用。
 - 写方法未登记动作会被 fail-closed 403，新增端点必须同步登记（见 `platform-ports.md`）。
 - IM callback 走独立 HMAC 路径，豁免 RBAC。
 

@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { BASE_REF_PATTERN, TASK_ID_PATTERN } from '../policy/rules';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -47,8 +48,7 @@ export interface WorktreeSuccess<T> {
 
 export type WorktreeResult<T> = WorktreeSuccess<T> | WorktreeFailure;
 
-const TASK_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
-const BASE_REF_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/;
+// taskId / baseRef 白名单（策略规则）统一来自 src/policy/rules.ts（S2-9）。
 
 /** git 调用结果：永不抛，全部以结构返回，便于上层如实上报失败原因。 */
 interface GitRun {
@@ -134,7 +134,7 @@ function resolveWorktreePath(
   root: string,
   taskId: string,
 ): WorktreeResult<string> {
-  if (!TASK_ID_RE.test(taskId) || taskId.includes('..')) {
+  if (!TASK_ID_PATTERN.test(taskId) || taskId.includes('..')) {
     return failure(
       'invalid_task_id',
       `taskId 非法：${JSON.stringify(taskId)}；只允许字母数字与 . _ -，且不得含 ..`,
@@ -149,7 +149,7 @@ function resolveWorktreePath(
 }
 
 function validateBaseRef(baseRef: string): WorktreeResult<string> {
-  if (!BASE_REF_RE.test(baseRef) || baseRef.includes('..') || baseRef.startsWith('-')) {
+  if (!BASE_REF_PATTERN.test(baseRef) || baseRef.includes('..') || baseRef.startsWith('-')) {
     return failure(
       'invalid_base_ref',
       `baseRef 非法：${JSON.stringify(baseRef)}；不得以 - 开头、不得含 ..，只允许字母数字与 . _ / -`,

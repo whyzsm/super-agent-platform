@@ -2,14 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   canTransition,
-  detectDangerousCommand,
   extractSkillDraft,
   getReadyDagNodes,
   parseSkillFrontmatter,
-  redactSecrets,
   resolveGateDecision,
   transitionTaskVerification,
 } from './stateMachine';
+// detectDangerousCommand / redactSecrets 的用例已随实现迁移至 src/policy/policy.test.ts（S2-9）。
 import type { DagNode, TaskCheckpoint } from '../protocol';
 
 function makeNode(overrides: Partial<DagNode> = {}): DagNode {
@@ -111,24 +110,6 @@ test('resolveGateDecision handles approve with skill extraction after recovery a
   assert.equal(parseSkillFrontmatter(draft.contentMd).valid, true);
 });
 
-test('detectDangerousCommand catches rm -rf /, DROP TABLE, git push --force, and sensitive paths', () => {
-  assert.equal(detectDangerousCommand('rm -rf /').dangerous, true);
-  assert.equal(detectDangerousCommand('psql -c "DROP TABLE task_nodes;"').dangerous, true);
-  assert.equal(detectDangerousCommand('git push --force origin main').dangerous, true);
-  assert.equal(detectDangerousCommand('cat .env.production').dangerous, true);
-  assert.equal(detectDangerousCommand('npm run test').dangerous, false);
-});
-
-test('redactSecrets scrubs API keys, bearer tokens, DB passwords, and emails before L0 upload', () => {
-  const raw =
-    'Using key sk-proj1234567890abcdef and Authorization: Bearer tok_1234567890abcdef on postgres://admin:s3cr3tpass@db:5432/app for alice@company.com';
-  const { redacted, hitCount } = redactSecrets(raw);
-  assert.equal(hitCount, 4);
-  assert.equal(redacted.includes('sk-proj'), false);
-  assert.equal(redacted.includes('s3cr3tpass'), false);
-  assert.equal(redacted.includes('alice@company.com'), false);
-  assert.equal(redacted.includes('[REDACTED_API_KEY]'), true);
-});
 
 import { recordUsageAndCheckBudget } from './stateMachine';
 

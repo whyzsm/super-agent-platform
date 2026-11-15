@@ -227,85 +227,9 @@ export function resolveGateDecision(
   };
 }
 
-const DANGER_PATTERNS: Array<{ regex: RegExp; rule: string; reason: string }> = [
-  {
-    regex: /\brm\s+-[a-zA-Z]*[rf][a-zA-Z]*\s+\/(\s|$|\*)/i,
-    rule: 'NO_ROOT_DELETE',
-    reason: '检测到高危根目录删除命令 (rm -rf /)，触发 Danger Gate 拦截。',
-  },
-  {
-    regex: /\bDROP\s+(TABLE|DATABASE|SCHEMA)\b/i,
-    rule: 'NO_DESTRUCTIVE_SQL',
-    reason: '检测到不可逆数据库结构删除语句 (DROP TABLE/DATABASE)，触发 Danger Gate 拦截。',
-  },
-  {
-    regex: /\bgit\s+push\s+(--force|-f)\b/i,
-    rule: 'NO_FORCE_PUSH',
-    reason: '检测到强推历史提交命令 (git push --force)，触发 Danger Gate 拦截。',
-  },
-  {
-    regex: /(^|\s)(\/etc\/|\.env(\.local|\.production)?\b|~\/\.ssh\/)/i,
-    rule: 'SENSITIVE_PATH_GUARD',
-    reason: '检测到越权访问沙箱白名单之外的敏感文件 (.env / ~/.ssh / /etc)，触发 Danger Gate 拦截。',
-  },
-];
-
-export function detectDangerousCommand(command: string): {
-  dangerous: boolean;
-  rule?: string;
-  reason?: string;
-} {
-  for (const pattern of DANGER_PATTERNS) {
-    if (pattern.regex.test(command)) {
-      return {
-        dangerous: true,
-        rule: pattern.rule,
-        reason: pattern.reason,
-      };
-    }
-  }
-  return { dangerous: false };
-}
-
-export function redactSecrets(rawLog: string): {
-  redacted: string;
-  hitCount: number;
-} {
-  let hitCount = 0;
-  let result = rawLog;
-
-  const patterns: Array<{ regex: RegExp; replacement: string }> = [
-    { regex: /\bsk-[A-Za-z0-9_-]{12,}\b/g, replacement: '[REDACTED_API_KEY]' },
-    { regex: /\bghp_[A-Za-z0-9]{16,}\b/g, replacement: '[REDACTED_GH_TOKEN]' },
-    { regex: /\bAKIA[0-9A-Z]{16}\b/g, replacement: '[REDACTED_AWS_KEY]' },
-    {
-      regex: /(Bearer\s+)[A-Za-z0-9._-]{16,}/gi,
-      replacement: '$1[REDACTED_BEARER_TOKEN]',
-    },
-    {
-      regex: /(postgres(?:ql)?:\/\/[^:\s]+:)[^@\s]+(@)/gi,
-      replacement: '$1[REDACTED_DB_PASS]$2',
-    },
-    {
-      regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
-      replacement: '[REDACTED_EMAIL]',
-    },
-  ];
-
-  for (const { regex, replacement } of patterns) {
-    result = result.replace(regex, (...args) => {
-      hitCount += 1;
-      // Preserve capture groups when replacement references $1/$2
-      let out = replacement;
-      if (args.length > 3) {
-        out = out.replace(/\$1/g, String(args[1] ?? '')).replace(/\$2/g, String(args[2] ?? ''));
-      }
-      return out;
-    });
-  }
-
-  return { redacted: result, hitCount };
-}
+// 危险命令检测与脱敏已收敛到 src/policy/（S2-9）：
+// 规则数据见 src/policy/rules.ts，求值见 src/policy/engine.ts。
+// 本文件回归纯状态机职责，不再承载安全策略。
 
 export function parseSkillFrontmatter(markdown: string): {
   valid: boolean;

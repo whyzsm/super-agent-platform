@@ -87,7 +87,7 @@ test('任一脚本非零退出时该项 passed:false 且总 passed:false，summa
 });
 
 test('日志对 sk- 密钥脱敏，不泄露原始密钥', () => {
-  // redactSecrets 实际规则（src/engine/stateMachine.ts）：
+  // redactSecrets 实际规则（src/policy/rules.ts）：
   //   /\bsk-[A-Za-z0-9_-]{12,}\b/g  ->  '[REDACTED_API_KEY]'
   // 构造符合 {12,} 且两侧为单词边界的独立 token。
   const secret = 'sk-a1b2c3d4e5f6g7h8i9j0';

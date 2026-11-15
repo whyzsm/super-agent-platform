@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import { createHeadlessJsonAdapter, createSessionSeq } from './headlessJson';
 import { OfflineSeqQueue, parseCliNdjsonLine } from '../../daemon/ndjsonParser';
-import { detectDangerousCommand } from '../../engine/stateMachine';
+import { detectDangerousCommand } from '../../policy/engine';
 import type { DaemonEnvelope, NormalizedAgentEvent } from '../../protocol';
 
 // headlessJson.ts 导出 createHeadlessJsonAdapter / HeadlessJsonAdapterOptions /

@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { parseCliNdjsonLine } from '../../daemon/ndjsonParser';
-import { redactSecrets } from '../../engine/stateMachine';
+import { redactSecrets } from '../../policy/engine';
 import type {
   AgentProvider,
   AgentRunnerAdapter,

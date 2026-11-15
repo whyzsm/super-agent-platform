@@ -1,4 +1,4 @@
-import { detectDangerousCommand, redactSecrets } from '../engine/stateMachine';
+import { detectDangerousCommand, redactSecrets } from '../policy/engine';
 import type {
   AgentProvider,
   AgentReasoningEvent,

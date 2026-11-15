@@ -29,7 +29,7 @@
 | `src/server/app.ts` / `src/server/context.ts` | `GET /api/stream` / `broadcastEnvelope`（心跳定时器在 `server.ts`） |
 | `src/daemon/ndjsonParser.ts:18 / :104` | `parseCliNdjsonLine` / `OfflineSeqQueue` |
 | `src/gateway/imWebhook.ts:20 / :53` | 验签 / `buildImApprovalCard` |
-| `src/engine/stateMachine.ts:258` | `redactSecrets`（6 类正则） |
+| `src/policy/engine.ts` | `redactSecrets`（6 类规则，数据在 `src/policy/rules.ts`） |
 | `src/stores/useAgentStreamStore.ts:18` | 前端 `EventSource('/api/stream')` 消费 |
 
 ## 当前实现状态（演示态）
