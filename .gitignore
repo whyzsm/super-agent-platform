@@ -34,3 +34,4 @@ coverage/
 
 # Agent 隔离工作树（git worktree 真实落盘目录）
 .worktrees/
+.superagent-traces.jsonl
