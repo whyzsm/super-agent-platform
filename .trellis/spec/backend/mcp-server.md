@@ -1,6 +1,6 @@
 # MCP Server：JSON-RPC 2.0 协议端点
 
-> 实现：`src/mcp/server.ts`（含 `mcp.test.ts` 21 用例）
+> 实现：`src/mcp/server.ts`（含 `mcp.test.ts` 27 用例）
 > 端点：`POST /api/mcp`（标准）、`POST /api/mcp/recall`（兼容旧 HTTP 调用方）
 > 传输桥：`scripts/mcp-stdio.mjs`
 > 适用：任何声称「MCP」「模型上下文协议」「工具调用」的代码、文档或 UI 文案
@@ -23,7 +23,7 @@
 | `initialize` | 返回 `protocolVersion`（`2025-06-18`）、`capabilities.tools`、`serverInfo`、`instructions`；客户端请求版本不被支持时回服务端支持版本 |
 | `notifications/initialized` | 通知，**不回包**（HTTP 层 202）；未声明的通知也静默忽略 |
 | `ping` | 返回 `{}` |
-| `tools/list` | 返回 3 个工具及 `inputSchema`（JSON Schema） |
+| `tools/list` | 返回 4 个工具及 `inputSchema`（JSON Schema） |
 | `tools/call` | 参数校验后执行工具，结果放 `content[0].text`（JSON 字符串）+ `structuredContent` |
 
 ## 工具与红线
@@ -32,9 +32,10 @@
 |------|------|------|
 | `recall_memory` | `query`(必填) / `limit` / `teamId` / `projectId` / `userId` / `agentId` | 四级 ACL 召回；**实现侧只返回 published，模块再兜底过滤一次**，draft 永不外泄 |
 | `get_task` | `taskId`(必填) | 返回真实状态、重试次数、验证结果摘要、worktreePath |
+| `propose_memory`（S2-5 写侧） | `title` / `contentMd` / `assetType`（必填）+ `scope` / `sourceReason` / caller 字段 | **工具层权限校验**：主体需 `memory:propose`（developer/reviewer/admin；McpContext 每请求注入 `principal`，缺省匿名 viewer 一律拒绝）。成功只产出 `status=draft`（查重分入库时算好），拒绝是 `isError` 工具结果而非协议错误；落地实现补记 `memory:propose / applied` 审计行 |
 | `list_blocked_tasks` | `limit` | 只返回需介入的 5 态：`HUMAN_GATE` / `WAITING_APPROVAL` / `RETRY_WAIT` / `BLOCKED_BY_RESOURCE` / `QUARANTINED` |
 
-Q5 红线在协议层同样生效：MCP 不提供任何写工具，`recall_memory` 也拿不到草案。
+Q5 红线在协议层同样生效：唯一的写工具 `propose_memory` **只产出 draft**，发布仍唯一走 `POST /api/memories/:id/approve`（memory:approve 人审）；`recall_memory` 永远拿不到草案。`POST /api/mcp` 路由本身仍登记为 `read`（协议入口允许握手与只读），写权限在工具层收紧。
 
 ## 错误码必须严格
 

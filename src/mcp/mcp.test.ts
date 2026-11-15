@@ -117,12 +117,12 @@ test('mcp: ping 返回空结果对象', () => {
   assert.deepEqual(res.result, {});
 });
 
-test('mcp: tools/list 暴露三个工具且 inputSchema 结构合法', () => {
+test('mcp: tools/list 暴露四个工具且 inputSchema 结构合法', () => {
   const res = asSuccess(handleMcpMessage({ jsonrpc: '2.0', id: 3, method: 'tools/list' }, ctx));
   const tools = (res.result as { tools: Array<Record<string, unknown>> }).tools;
-  assert.equal(tools.length, 3);
+  assert.equal(tools.length, 4);
   const names = tools.map((t) => t.name).sort();
-  assert.deepEqual(names, ['get_task', 'list_blocked_tasks', 'recall_memory']);
+  assert.deepEqual(names, ['get_task', 'list_blocked_tasks', 'propose_memory', 'recall_memory']);
   for (const t of tools) {
     assert.equal(typeof t.description, 'string');
     const schema = t.inputSchema as Record<string, unknown>;
@@ -338,4 +338,88 @@ test('mcp: JSON Schema 校验器覆盖整数边界与非对象入参', () => {
   assert.equal(validateAgainstSchema({ n: 2.5 }, schema).ok, false);
   assert.equal(validateAgainstSchema([], schema).ok, false);
   assert.equal(validateAgainstSchema({}, schema).ok, false);
+});
+
+// ---- propose_memory（S2-5 写侧权限）----
+
+function call(name: string, args: Record<string, unknown>, ctxArg?: McpContext) {
+  return handleMcpMessage(
+    { jsonrpc: '2.0', id: 99, method: 'tools/call', params: { name, arguments: args } },
+    ctxArg ?? ctx,
+  );
+}
+
+test('propose_memory: 匿名（无 principal）一律拒绝且是工具级 isError', () => {
+  const r = call('propose_memory', { title: 'T', contentMd: 'C', assetType: 'L1_FACT' });
+  const result = (r as JsonRpcSuccess).result as { isError?: boolean; content: { text: string }[] };
+  assert.equal(result.isError, true);
+  assert.ok(result.content[0].text.includes('无权执行 memory:propose'));
+});
+
+test('propose_memory: viewer 主体拒绝', () => {
+  const viewerCtx: McpContext = {
+    ...ctx,
+    principal: { userId: 'v1', teamId: 't', roles: ['viewer'], authenticated: true },
+  };
+  const r = call('propose_memory', { title: 'T', contentMd: 'C', assetType: 'SKILL' }, viewerCtx);
+  const result = (r as JsonRpcSuccess).result as { isError?: boolean };
+  assert.equal(result.isError, true);
+});
+
+test('propose_memory: developer 主体创建 draft（含人审提示与查重分）', () => {
+  const store: MemoryAsset[] = [MEMORIES[0]];
+  const devCtx: McpContext = {
+    ...ctx,
+    principal: { userId: 'dev-1', teamId: 'team-platform-core', roles: ['developer'], authenticated: true },
+    proposeMemory: (input, caller) => {
+      const asset = memory({
+        id: 'mem-new',
+        status: 'draft',
+        title: input.title,
+        teamId: caller.teamId,
+      });
+      store.unshift(asset);
+      return { ok: true, asset };
+    },
+  };
+  const r = call(
+    'propose_memory',
+    { title: '新草案', contentMd: '内容', assetType: 'SKILL' },
+    devCtx,
+  );
+  const result = (r as JsonRpcSuccess).result as {
+    structuredContent: { proposed: { status: string }; note: string };
+  };
+  assert.equal(result.structuredContent.proposed.status, 'draft');
+  assert.ok(result.structuredContent.note.includes('memory:approve'));
+  assert.equal(store[0].id, 'mem-new');
+});
+
+test('propose_memory: 未接入落地实现时诚实报错', () => {
+  const devCtx: McpContext = {
+    ...ctx,
+    principal: { userId: 'dev-1', teamId: 't', roles: ['admin'], authenticated: true },
+  };
+  const r = call('propose_memory', { title: 'T', contentMd: 'C', assetType: 'SKILL' }, devCtx);
+  const result = (r as JsonRpcSuccess).result as { isError?: boolean; content: { text: string }[] };
+  assert.equal(result.isError, true);
+  assert.ok(result.content[0].text.includes('未接入'));
+});
+
+test('propose_memory: 参数校验走 -32602（缺 title / 非法 assetType / 多余字段）', () => {
+  for (const args of [
+    { contentMd: 'C', assetType: 'SKILL' },
+    { title: 'T', contentMd: 'C', assetType: 'NOT_A_TYPE' },
+    { title: 'T', contentMd: 'C', assetType: 'SKILL', extra: 1 },
+  ]) {
+    const r = call('propose_memory', args);
+    assert.equal((r as JsonRpcError).error.code, RPC_ERRORS.INVALID_PARAMS);
+  }
+});
+
+test('tools/list: 暴露 4 个工具且含 propose_memory', () => {
+  const r = handleMcpMessage({ jsonrpc: '2.0', id: 7, method: 'tools/list' }, ctx);
+  const tools = ((r as JsonRpcSuccess).result as { tools: { name: string }[] }).tools;
+  assert.equal(tools.length, 4);
+  assert.ok(tools.some((x) => x.name === 'propose_memory'));
 });

@@ -566,7 +566,7 @@ async function main() {
     check(
       'MCP: tools/list 暴露 3 个工具且带 inputSchema',
       tools.status === 200 &&
-        names.join(',') === 'get_task,list_blocked_tasks,recall_memory' &&
+        names.join(',') === 'get_task,list_blocked_tasks,propose_memory,recall_memory' &&
         (tools.json?.result?.tools ?? []).every((t) => t.inputSchema?.type === 'object'),
       `tools=${names.join(',')}`,
     );
@@ -595,6 +595,60 @@ async function main() {
         hits.every((h) => h.status === 'published') &&
         typeof recall.json?.result?.content?.[0]?.text === 'string',
       `status=${recall.status} hits=${hits.length} body=${recall.text.slice(0, 200)}`,
+    );
+
+    // S2-5：写侧工具 propose_memory 的权限与 draft 语义（loopback 默认 admin，应成功创建草案）
+    const proposeAdmin = await call('POST', '/api/mcp', {
+      body: {
+        jsonrpc: '2.0',
+        id: 6,
+        method: 'tools/call',
+        params: {
+          name: 'propose_memory',
+          arguments: { title: '冒烟草案', contentMd: 'smoke propose draft', assetType: 'L1_FACT' },
+        },
+      },
+    });
+    const proposed = proposeAdmin.json?.result?.structuredContent?.proposed;
+    check(
+      'MCP: propose_memory 管理员可提交 draft 且提示人审',
+      proposeAdmin.status === 200 &&
+        proposed?.status === 'draft' &&
+        typeof proposeAdmin.json?.result?.structuredContent?.note === 'string',
+      `status=${proposeAdmin.status} proposed=${JSON.stringify(proposed)}`,
+    );
+    const proposeViewer = await call('POST', '/api/mcp', {
+      body: {
+        jsonrpc: '2.0',
+        id: 7,
+        method: 'tools/call',
+        params: {
+          name: 'propose_memory',
+          arguments: { title: 'x', contentMd: 'y', assetType: 'L1_FACT' },
+        },
+      },
+      headers: { 'x-superagent-roles': 'viewer' },
+    });
+    check(
+      'MCP: propose_memory viewer 被工具级拒绝',
+      proposeViewer.status === 200 && proposeViewer.json?.result?.isError === true,
+      `status=${proposeViewer.status} body=${proposeViewer.text.slice(0, 160)}`,
+    );
+    const proposeBad = await call('POST', '/api/mcp', {
+      body: {
+        jsonrpc: '2.0',
+        id: 8,
+        method: 'tools/call',
+        params: {
+          name: 'propose_memory',
+          arguments: { title: 'x', contentMd: 'y', assetType: 'NOT_A_TYPE' },
+        },
+      },
+    });
+    check(
+      'MCP: propose_memory 非法枚举 -32602',
+      proposeBad.status === 200 && proposeBad.json?.error?.code === -32602,
+      `status=${proposeBad.status} body=${proposeBad.text.slice(0, 160)}`,
     );
 
     const badTool = await call('POST', '/api/mcp', {

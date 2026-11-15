@@ -9,6 +9,8 @@ export type Action =
   | 'task:advance'
   | 'task:gate'
   | 'memory:approve'
+  // 提交记忆草案（MCP propose_memory）：只产出 draft，发布仍走 memory:approve 人审
+  | 'memory:propose'
   | 'teamai:write'
   | 'runtime:spawn'
   | 'runtime:events'

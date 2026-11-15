@@ -7,8 +7,8 @@ import type { Action, Principal, Role } from './types';
 // RBAC 权限矩阵（下表即规格；每个集合是"累积后的有效权限集"）
 // ----------------------------------------------------------------------------
 //   viewer    : read, runtime:events
-//   developer : viewer 的 + requirement:create, task:advance, runtime:spawn
-//   reviewer  : viewer 的 + task:gate, memory:approve, teamai:write
+//   developer : viewer 的 + requirement:create, task:advance, runtime:spawn, memory:propose
+//   reviewer  : viewer 的 + task:gate, memory:approve, teamai:write, memory:propose
 //               （注意：reviewer 不继承 developer 的写权限，二者是并列分支）
 //   admin     : 全部 Action（含 admin:reset）
 //
@@ -26,6 +26,7 @@ export const ALL_ACTIONS: Action[] = [
   'task:advance',
   'task:gate',
   'memory:approve',
+  'memory:propose',
   'teamai:write',
   'runtime:spawn',
   'runtime:events',
@@ -40,6 +41,7 @@ const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Action>> = {
     'requirement:create',
     'task:advance',
     'runtime:spawn',
+    'memory:propose',
   ]),
   reviewer: new Set<Action>([
     'read',
@@ -47,6 +49,7 @@ const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Action>> = {
     'task:gate',
     'memory:approve',
     'teamai:write',
+    'memory:propose',
   ]),
   admin: new Set<Action>(ALL_ACTIONS),
 };

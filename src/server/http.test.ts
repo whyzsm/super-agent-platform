@@ -715,6 +715,44 @@ describe('HTTP 路由层（隔离实例 + 真实 HTTP）', () => {
       }
     });
 
+    it('MCP propose_memory：viewer 被拒、developer 创建 draft 且不进召回', async () => {
+      const app = await startTestApp();
+      try {
+        const callTool = async (args: unknown, roles: string) =>
+          post<{ result?: { isError?: boolean; structuredContent?: { proposed?: { id: string; status: string } } } }>(
+            app.url + '/api/mcp',
+            { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'propose_memory', arguments: args } },
+            { 'x-superagent-roles': roles },
+          );
+        // viewer：工具级拒绝（isError），不是协议错误
+        const denied = await callTool(
+          { title: '草案', contentMd: '内容', assetType: 'SKILL' },
+          'viewer',
+        );
+        assert.equal(denied.status, 200);
+        assert.equal(denied.body.result?.isError, true, 'viewer 不得写入');
+        // developer：创建 draft
+        const okRes = await callTool(
+          { title: '对账幂等新方案草案', contentMd: '唯一索引方案补充', assetType: 'SKILL' },
+          'developer',
+        );
+        assert.equal(okRes.status, 200);
+        const proposed = okRes.body.result?.structuredContent?.proposed;
+        assert.equal(proposed?.status, 'draft');
+        // 草案入库但不进召回；发布仍需 memory:approve
+        const boot = await json<{ memories: { id: string; status: string }[] }>(app.url + '/api/bootstrap');
+        assert.ok(boot.body.memories.some((m) => m.id === proposed!.id && m.status === 'draft'));
+        const recall = await post<{ results: { asset: { id: string } }[]; excludedDraftsCount: number }>(
+          app.url + '/api/mcp/recall',
+          { query: '对账 幂等', caller: { teamId: 'team-platform-core', projectId: 'proj-reconcile' } },
+        );
+        assert.ok(!recall.body.results.some((r) => r.asset.id === proposed!.id), 'draft 绝不出站');
+        assert.equal(recall.body.excludedDraftsCount, 2);
+      } finally {
+        await app.close();
+      }
+    });
+
     it('POST /api/mcp/recall 中文查询真实召回且 draft 不出站', async () => {
       const app = await startTestApp();
       try {

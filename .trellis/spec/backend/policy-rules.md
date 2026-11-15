@@ -24,6 +24,7 @@
 - 危险命令按数组顺序求值，**首条命中即返回**；调整顺序 = 调整拦截优先级。
 - 改任何规则必须同步 `policy.test.ts` 对应用例。
 - 已知保守误报（有意保留，见 `docs/decision-log.md` D-2026-11-16-04）：`--force-with-lease` 命中 `NO_FORCE_PUSH`；`.env.example` 命中 `SENSITIVE_PATH_GUARD`。
+- 写侧工具权限：MCP `propose_memory` 在**工具层**校验 `memory:propose`（developer/reviewer/admin），viewer/匿名拒绝为 `isError`；`POST /api/mcp` 路由保持 `read` 登记（见 mcp-server.md）。
 
 ## 消费方（import 一律指向 src/policy，不留旧路径 re-export）
 

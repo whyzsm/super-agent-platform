@@ -1,7 +1,9 @@
 import type { Express } from 'express';
-import { recallMemoryAssets } from '../memory/recallEngine';
+import { computeMaxDuplicateScore, recallMemoryAssets } from '../memory/recallEngine';
 import { handleMcpMessage, MCP_PROTOCOL_VERSION } from '../mcp/server';
-import type { McpContext } from '../mcp/server';
+import type { McpContext, ProposeMemoryInput, ProposeMemoryOutcome } from '../mcp/server';
+import type { RecallCaller } from '../mcp/server';
+import type { MemoryAsset } from '../protocol';
 import type { ServerContext } from './context';
 
 /**
@@ -11,19 +13,60 @@ import type { ServerContext } from './context';
  * 这样 `POST /api/reset` 替换状态后 MCP 工具立即看到新状态。
  */
 export function registerMemoryRoutes(app: Express, ctx: ServerContext): void {
-  const { state, saveState, syncTeamAiFileToDisk } = ctx;
+  const { state, saveState, syncTeamAiFileToDisk, auditLog } = ctx;
 
   // ---- MCP（Model Context Protocol）标准端点 ----
   // JSON-RPC 2.0：initialize / tools/list / tools/call / ping。
+  // mcpContext 是惰性闭包：必须每次实时读 state.current，reset 后立即看到新状态。
   const mcpContext: McpContext = {
     recall: (query, caller, limit) => recallMemoryAssets(state.current.memories, query, caller, limit),
     getTask: (id) => state.current.tasks.find((t) => t.id === id),
     listTasks: () => state.current.tasks,
     countDrafts: () => state.current.memories.filter((m) => m.status === 'draft').length,
+    // 写侧落地（S2-5）：只产出 draft；发布仍走 POST /api/memories/:id/approve（memory:approve 人审）。
+    proposeMemory: (input: ProposeMemoryInput, caller: RecallCaller): ProposeMemoryOutcome => {
+      const asset: MemoryAsset = {
+        id: `mem-mcp-${Date.now()}`,
+        teamId: caller.teamId,
+        ownerId: caller.userId ?? caller.agentId ?? 'mcp-caller',
+        assetType: input.assetType,
+        scope: input.scope,
+        status: 'draft',
+        title: input.title,
+        contentMd: input.contentMd,
+        sourceReason: input.sourceReason ?? 'MCP propose_memory 提交（待人审）',
+        duplicateScore: computeMaxDuplicateScore(input.contentMd, state.current.memories),
+        version: 0,
+        createdAt: new Date().toISOString(),
+        acl: [
+          {
+            assetId: '',
+            subjectType: 'team',
+            subjectId: caller.teamId,
+            permission: 'read',
+          },
+        ],
+      };
+      asset.acl[0].assetId = asset.id;
+      state.current.memories.unshift(asset);
+      saveState(state.current);
+      // 写侧动作单独记审计：MCP 入口按只读登记，这里补一条 memory:propose 的 applied 事实。
+      auditLog.record({
+        userId: caller.userId ?? caller.agentId ?? 'mcp-caller',
+        teamId: caller.teamId,
+        action: 'memory:propose',
+        target: asset.id,
+        outcome: 'applied',
+        detail: `title=${input.title.slice(0, 80)}`,
+      });
+      return { ok: true, asset };
+    },
   };
 
   app.post('/api/mcp', (req, res) => {
-    const result = handleMcpMessage(req.body, mcpContext);
+    // 每请求注入主体：propose_memory 等写侧工具据此做权限校验（工具层，非路由层）。
+    const principal = res.locals.principal as McpContext['principal'];
+    const result = handleMcpMessage(req.body, { ...mcpContext, principal });
     // 纯通知（如 notifications/initialized）按 JSON-RPC 规范回 202 无内容。
     if (result === null) {
       res.status(202).end();

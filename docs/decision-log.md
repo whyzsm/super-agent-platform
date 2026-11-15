@@ -50,6 +50,30 @@
 - 理由：三挡中只有确定性放行挡可真实落地；「配置了代批但悄悄当全绿放行」是最危险的伪造形态，宁可降级并在审计里说明。
 - 影响：`advance` 落入 HUMAN_GATE 后多一次策略评估（默认挡立即返回，零行为变化）；S3-5 的「三挡放行」要素就此闭环，任务标记完成。
 
+## D-2026-11-16-07 S2-5 propose_memory 的写入侧权限模型
+
+- 背景：MCP 已有 3 个只读工具；handoff §10.3 建议加 `propose_memory` 验证写入侧权限。难点：`POST /api/mcp` 在 ROUTE_ACTIONS 登记为 `read`（协议入口按只读放行，viewer 也能握手），写动作如何在工具层收紧？
+- 决策：
+  1. 新增 Action `memory:propose`（developer / reviewer / admin 并列分支可用，viewer 与匿名不可）；rbac.ts 权威矩阵与 identity 穷举测试同步。
+  2. 权限校验放在**工具层**（`src/mcp/server.ts` callTool）：McpContext 新增每请求 `principal`（`res.locals.principal` 注入，缺省匿名 viewer）；拒绝以 `isError` 工具结果表达（语义是「工具拒绝执行」，不是协议错误 -32603），放行才走 `proposeMemory` 落地。
+  3. Q5 红线不破：`propose_memory` **只产出 status=draft**，duplicateScore 入库时计算；发布仍唯一走 `POST /api/memories/:id/approve`（memory:approve 人审）；draft 绝不进召回（召回过滤已有，测试再锁一遍）。
+  4. 写侧动作补审计：落地实现里单独记 `memory:propose / applied` 审计行——MCP 入口按只读登记的审计不足以覆盖真实写入。
+  5. 顺手修了校验器真实缺口：`validateAgainstSchema` 此前不支持 `enum`/`maxLength`（schema 里声明了却不生效），已补并加用例。
+- 理由：协议入口保持只读登记，可让任何 MCP 客户端完成握手与只读查询；写权限按工具粒度收紧到 RBAC 矩阵，权限模型仍只有一份（rbac.ts）。拒绝不升级为协议错误，客户端能看到可读的权限提示。
+- 影响：MCP 工具 3→4；冒烟 54→57 项；单测 247→254。
+
+## D-2026-11-16-07 S2-5 propose_memory 的写入侧权限模型
+
+- 背景：MCP 已有 3 个只读工具；handoff §10.3 建议加 `propose_memory` 验证写入侧权限。难点：`POST /api/mcp` 在 ROUTE_ACTIONS 登记为 `read`（协议入口按只读放行，viewer 也能握手），写动作如何在工具层收紧？
+- 决策：
+  1. 新增 Action `memory:propose`（developer / reviewer / admin 可用，viewer 与匿名不可）；rbac.ts 权威矩阵与 identity 穷举测试同步。
+  2. 权限校验放在**工具层**（`src/mcp/server.ts` callTool）：McpContext 每请求注入 `principal`（`res.locals.principal`，缺省匿名 viewer）；拒绝以 `isError` 工具结果表达（工具拒绝执行，非协议错误），放行才走 `proposeMemory` 落地。
+  3. Q5 红线不破：`propose_memory` **只产出 status=draft**，duplicateScore 入库时计算；发布仍唯一走 `POST /api/memories/:id/approve`（memory:approve 人审）；draft 绝不进召回。
+  4. 写侧动作补审计：落地实现里单独记 `memory:propose / applied` 审计行——MCP 入口按只读登记的审计不足以覆盖真实写入。
+  5. 顺手修了校验器真实缺口：`validateAgainstSchema` 此前不支持 `enum`/`maxLength`（schema 声明了却不生效），已补并加用例。
+- 理由：协议入口保持只读登记，任何 MCP 客户端都能握手与只读查询；写权限按工具粒度收紧到唯一权限矩阵（rbac.ts）。拒绝不升级为协议错误，客户端能看到可读的权限提示。
+- 影响：MCP 工具 3→4；冒烟 54→57 项；单测 247→254。
+
 ## D-2026-11-16-03 S1-1 拆分形态（补记，上轮已按此执行）
 
 - 决策：`server.ts` 拆为启动引导 + `src/server/` 9 个域模块；共享闭包收敛为 `ServerContext`（`state`/`seq` 盒子）；handler verbatim 迁移，不趁机混入 S3-2 模板注册表。

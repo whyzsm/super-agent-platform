@@ -137,7 +137,7 @@ test('rbac: viewer 权限矩阵逐项（仅 read / runtime:events）', () => {
   }
 });
 
-test('rbac: developer 权限矩阵逐项（viewer + 三项写）', () => {
+test('rbac: developer 权限矩阵逐项（viewer + 三项写 + 记忆提案）', () => {
   const p = principal({ roles: ['developer'] });
   const allowed: Action[] = [
     'read',
@@ -145,13 +145,14 @@ test('rbac: developer 权限矩阵逐项（viewer + 三项写）', () => {
     'requirement:create',
     'task:advance',
     'runtime:spawn',
+    'memory:propose',
   ];
   for (const action of ALL_ACTIONS) {
     assert.equal(isAllowed(p, action), allowed.includes(action), `developer / ${action}`);
   }
 });
 
-test('rbac: reviewer 权限矩阵逐项（viewer + gate/approve/teamai，不含 developer 写权限）', () => {
+test('rbac: reviewer 权限矩阵逐项（viewer + gate/approve/teamai/propose，不含 developer 写权限）', () => {
   const p = principal({ roles: ['reviewer'] });
   const allowed: Action[] = [
     'read',
@@ -159,6 +160,7 @@ test('rbac: reviewer 权限矩阵逐项（viewer + gate/approve/teamai，不含 
     'task:gate',
     'memory:approve',
     'teamai:write',
+    'memory:propose',
   ];
   for (const action of ALL_ACTIONS) {
     assert.equal(isAllowed(p, action), allowed.includes(action), `reviewer / ${action}`);

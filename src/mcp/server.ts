@@ -1,5 +1,7 @@
-import type { DagNode } from '../protocol';
+import type { DagNode, MemoryAsset, MemoryAssetType, MemoryScope } from '../protocol';
 import type { RecallResult } from '../memory/recallEngine';
+import { isAllowed } from '../identity/rbac';
+import type { Action, Principal } from '../identity/types';
 
 /**
  * MCP（Model Context Protocol）服务端实现：JSON-RPC 2.0 语义 + tools 能力。
@@ -70,9 +72,28 @@ export interface McpContext {
   getTask(taskId: string): DagNode | undefined;
   listTasks(): DagNode[];
   countDrafts(): number;
+  /**
+   * 写侧工具 propose_memory 的落地实现（S2-5）：只允许产出 status=draft 的草案。
+   * 缺省未接入时工具返回 isError（诚实报未实现，不伪造成功）。
+   */
+  proposeMemory?(input: ProposeMemoryInput, caller: RecallCaller): ProposeMemoryOutcome;
+  /** 当前请求主体；缺省按匿名 viewer 处理（写侧工具一律拒绝） */
+  principal?: Principal;
   /** 注入当前时间以便测试；默认 new Date() */
   now?(): Date;
 }
+
+export interface ProposeMemoryInput {
+  title: string;
+  contentMd: string;
+  assetType: MemoryAssetType;
+  scope: MemoryScope;
+  sourceReason?: string;
+}
+
+export type ProposeMemoryOutcome =
+  | { ok: false; error: string }
+  | { ok: true; asset: MemoryAsset };
 
 interface ToolDef {
   name: string;
@@ -130,7 +151,37 @@ const LIST_BLOCKED_TOOL: ToolDef = {
   },
 };
 
-const TOOLS: ToolDef[] = [RECALL_TOOL, GET_TASK_TOOL, LIST_BLOCKED_TOOL];
+const PROPOSE_TOOL: ToolDef = {
+  name: 'propose_memory',
+  title: '提交记忆草案',
+  description:
+    '提交一条团队记忆草案（status=draft）。写入侧权限校验：调用主体需要 memory:propose（developer/reviewer/admin），viewer 与匿名一律拒绝。草案必须经人工 memory:approve 审批才发布，draft 永不出现在召回结果中（Q5 红线）。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      title: { type: 'string', minLength: 1, maxLength: 200, description: '草案标题' },
+      contentMd: { type: 'string', minLength: 1, description: '草案正文（Markdown）' },
+      assetType: {
+        type: 'string',
+        enum: ['L1_FACT', 'L2_SOLUTION', 'SKILL', 'LLM_WIKI', 'CODE_GRAPH'],
+        description: '资产类型',
+      },
+      scope: {
+        type: 'string',
+        enum: ['team', 'project', 'user', 'agent'],
+        description: '作用域，默认 team',
+      },
+      sourceReason: { type: 'string', maxLength: 500, description: '来源说明（可选）' },
+      teamId: { type: 'string', description: '调用方团队 ID，缺省用服务端默认团队' },
+      userId: { type: 'string', description: '用户 ID（ACL 一级）' },
+      agentId: { type: 'string', description: 'Agent ID（ACL 一级）' },
+    },
+    required: ['title', 'contentMd', 'assetType'],
+    additionalProperties: false,
+  },
+};
+
+const TOOLS: ToolDef[] = [RECALL_TOOL, GET_TASK_TOOL, LIST_BLOCKED_TOOL, PROPOSE_TOOL];
 
 const NEEDS_ATTENTION = new Set([
   'HUMAN_GATE',
@@ -239,6 +290,13 @@ export function validateAgainstSchema(
       if (rawRule.length < minLength) {
         return { ok: false, message: `参数 ${key} 长度不足 ${minLength}` };
       }
+      const maxLength = typeof rule.maxLength === 'number' ? rule.maxLength : Infinity;
+      if (rawRule.length > maxLength) {
+        return { ok: false, message: `参数 ${key} 长度超过 ${maxLength}` };
+      }
+      if (Array.isArray(rule.enum) && !(rule.enum as unknown[]).includes(rawRule)) {
+        return { ok: false, message: `参数 ${key} 必须是 ${(rule.enum as unknown[]).join(' / ')} 之一` };
+      }
     } else if (type === 'integer') {
       if (typeof rawRule !== 'number' || !Number.isInteger(rawRule)) {
         return { ok: false, message: `参数 ${key} 必须是整数` };
@@ -337,6 +395,60 @@ function callTool(
           assignedMachine: t.assignedMachine,
         }));
       return { ok: true, result: toolResult({ total: tasks.length, tasks }) };
+    }
+    case 'propose_memory': {
+      // 写侧权限（S2-5）：MCP 入口路由是只读登记，写动作在工具层显式校验。
+      const principal: Principal =
+        ctx.principal ?? {
+          userId: 'anonymous',
+          teamId: 'anonymous',
+          roles: ['viewer'],
+          authenticated: false,
+        };
+      const action: Action = 'memory:propose';
+      if (!isAllowed(principal, action)) {
+        return {
+          ok: true,
+          result: toolError(
+            `Forbidden: ${principal.userId} 无权执行 ${action}（需要 developer / reviewer / admin 角色）`,
+          ),
+        };
+      }
+      if (!ctx.proposeMemory) {
+        return { ok: true, result: toolError('propose_memory 未接入落地实现') };
+      }
+      const caller: RecallCaller = {
+        teamId: typeof args.teamId === 'string' ? args.teamId : 'team-platform-core',
+        userId: typeof args.userId === 'string' ? args.userId : principal.userId,
+        agentId: typeof args.agentId === 'string' ? args.agentId : principal.agentId,
+      };
+      const outcome = ctx.proposeMemory(
+        {
+          title: String(args.title),
+          contentMd: String(args.contentMd),
+          assetType: args.assetType as MemoryAssetType,
+          scope: (typeof args.scope === 'string' ? args.scope : 'team') as MemoryScope,
+          sourceReason: typeof args.sourceReason === 'string' ? args.sourceReason : undefined,
+        },
+        caller,
+      );
+      if (!outcome.ok) {
+        return { ok: true, result: toolError(outcome.error) };
+      }
+      return {
+        ok: true,
+        result: toolResult({
+          tool: 'propose_memory',
+          proposed: {
+            id: outcome.asset.id,
+            title: outcome.asset.title,
+            status: outcome.asset.status,
+            duplicateScore: outcome.asset.duplicateScore,
+            version: outcome.asset.version,
+          },
+          note: '草案已入库（status=draft）。发布必须经人工 memory:approve 审批；draft 不会出现在召回结果中。',
+        }),
+      };
     }
     default:
       return { ok: false, code: RPC_ERRORS.INVALID_PARAMS, message: `未知工具：${name}` };
