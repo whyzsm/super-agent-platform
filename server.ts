@@ -40,9 +40,29 @@ import type {
   TeamAiAsset,
   VerifierCheck,
 } from './src/protocol';
+import { createFileStateStore } from './src/store/fileStateStore';
+import { createLocalIdentityProvider } from './src/identity/localProvider';
+import { isAllowed } from './src/identity/rbac';
+import { createAuditLog } from './src/identity/audit';
+import type { Action, Principal } from './src/identity/types';
+import { createCommandBus } from './src/loop/commandBus';
+import type { LoopCommandKind } from './src/loop/commandBus';
+import { applyResourceTransition, deriveRetrospective } from './src/loop/taskLifecycle';
+import type { ResourceKind } from './src/loop/taskLifecycle';
 
 const PORT = 3000;
 const STATE_FILE = path.resolve(process.cwd(), '.superagent-state.json');
+const COMMANDS_FILE = path.resolve(process.cwd(), '.superagent-commands.jsonl');
+const LOOP_FILE = path.resolve(process.cwd(), '.superagent-loop.jsonl');
+const AUDIT_FILE = path.resolve(process.cwd(), '.superagent-audit.jsonl');
+
+// Ports & Adapters：业务只依赖接口。生产把 StateStore 换 Postgres、
+// IdentityProvider 换 OIDC、CommandBus 换 Temporal，流程代码不动。
+const store = createFileStateStore({ statePath: STATE_FILE, logPath: COMMANDS_FILE });
+const identityProvider = createLocalIdentityProvider();
+const auditLog = createAuditLog({ path: AUDIT_FILE });
+const commandBus = createCommandBus({ logPath: LOOP_FILE });
+
 const IM_WEBHOOK_SECRET = process.env.IM_WEBHOOK_SECRET;
 if (!IM_WEBHOOK_SECRET) {
   console.warn(
@@ -63,24 +83,32 @@ function syncTeamAiFileToDisk(relPath: string, content: string): void {
 
 function loadOrInitState(): PlatformState {
   try {
-    if (fs.existsSync(STATE_FILE)) {
-      const raw = fs.readFileSync(STATE_FILE, 'utf-8');
-      const parsed = JSON.parse(raw) as PlatformState;
-      if (parsed && Array.isArray(parsed.requirements) && Array.isArray(parsed.tasks)) {
-        return parsed;
-      }
+    const loaded = store.load();
+    if (loaded) return loaded;
+  } catch (err) {
+    // 损坏快照先隔离留证，绝不静默覆写——静默回退会永久丢失真实进度。
+    const backup = `${STATE_FILE}.corrupt-${Date.now()}`;
+    try {
+      if (fs.existsSync(STATE_FILE)) fs.renameSync(STATE_FILE, backup);
+      console.error(`[loadOrInitState] 状态快照损坏，已备份至 ${backup}`);
+    } catch (backupErr) {
+      console.error(
+        `[loadOrInitState] 状态快照损坏且备份失败: ${backupErr instanceof Error ? backupErr.message : String(backupErr)}`,
+      );
     }
-  } catch {
-    // Fall back to fresh seed state
+    console.error(
+      `[loadOrInitState] 解析失败原因: ${err instanceof Error ? err.message : String(err)}；命令日志中仍有 ${store.replayCommands().length} 条已提交命令，需人工核对`,
+    );
   }
   const initial = createInitialSeedState();
   saveState(initial);
   return initial;
 }
 
-function saveState(state: PlatformState): void {
+function saveState(next: PlatformState): void {
   try {
-    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf-8');
+    // 临时文件 + rename：崩溃后目标文件要么是旧完整快照，要么是新完整快照。
+    store.save(next);
   } catch (err) {
     console.error(
       `[saveState] failed to write ${STATE_FILE}: ${err instanceof Error ? err.message : String(err)}`,
@@ -161,6 +189,71 @@ function unlockReadyNodesForRequirement(reqId: string): void {
 async function startServer() {
   const app = express();
   app.use(express.json({ limit: '2mb' }));
+
+  // ---- 团队化协作：本地身份 / RBAC / 不可变审计 / 幂等命令 ----
+  // dev adapter：loopback 且未携带身份头时注入本地管理员，保证开箱可用；
+  // 非 loopback 且无身份头 → 匿名 viewer，写操作一律 403。生产换 OIDC adapter 即可。
+  const WRITE_ACTION: Array<[RegExp, Action]> = [
+    [/^\/api\/requirements$/, 'requirement:create'],
+    [/^\/api\/tasks\/[^/]+\/gate$/, 'task:gate'],
+    [/^\/api\/tasks\/[^/]+\/real-spawn$/, 'runtime:spawn'],
+    [/^\/api\/memories\/[^/]+\/approve$/, 'memory:approve'],
+    [/^\/api\/teamai$/, 'teamai:write'],
+  ];
+  function actionFor(method: string, url: string): Action | null {
+    if (url.startsWith('/api/webhooks/')) return null; // IM 回调走 HMAC 验签，豁免 RBAC
+    if (method === 'GET') {
+      // 运行事件含内部轨迹，即使是 GET 也要求 viewer 及以上（匿名仅 read）。
+      return url === '/api/runtime/events' ? 'runtime:events' : 'read';
+    }
+    for (const [re, action] of WRITE_ACTION) if (re.test(url)) return action;
+    return 'task:advance';
+  }
+  app.use((req, res, next) => {
+    const url = req.path;
+    if (!url.startsWith('/api/')) return next();
+    const action = actionFor(req.method, url);
+    if (!action) return next();
+
+    const headers = { ...req.headers } as Record<string, string | string[] | undefined>;
+    const hasIdentity = Object.keys(headers).some((k) => k.startsWith('x-superagent-'));
+    const remote = req.socket.remoteAddress ?? '';
+    const loopback =
+      remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1';
+    if (!hasIdentity && loopback) {
+      headers['x-superagent-user'] = process.env.SUPERAGENT_DEV_USER ?? 'local-dev';
+      headers['x-superagent-team'] = process.env.SUPERAGENT_DEV_TEAM ?? 'team-local';
+      headers['x-superagent-roles'] = process.env.SUPERAGENT_DEV_ROLES ?? 'admin';
+    }
+    const principal: Principal = identityProvider.resolve(headers);
+    const allowed = isAllowed(principal, action);
+    auditLog.record({
+      userId: principal.userId,
+      teamId: principal.teamId,
+      action,
+      target: `${req.method} ${url}`,
+      outcome: allowed ? 'allowed' : 'denied',
+    });
+    if (!allowed) {
+      res.status(403).json({ error: `Forbidden: ${principal.userId} 无权执行 ${action}` });
+      return;
+    }
+    // 可选 commandId：重复命令直接 409，保证重放不二次写状态。
+    const body = req.body as { commandId?: unknown } | undefined;
+    if (req.method !== 'GET' && typeof body?.commandId === 'string' && body.commandId.trim()) {
+      const outcome = store.appendCommand(body.commandId, `${req.method} ${url}`, {
+        method: req.method,
+        url,
+        userId: principal.userId,
+      });
+      if (outcome.duplicate) {
+        res.status(409).json({ error: `重复命令 ${body.commandId} 已执行，拒绝二次写入` });
+        return;
+      }
+    }
+    res.locals.principal = principal;
+    next();
+  });
 
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, seq: globalSeq, requirements: state.requirements.length });
@@ -1140,7 +1233,7 @@ ${stepLines}
     if (existingTeamAi) {
       existingTeamAi.content = contentMd;
       existingTeamAi.updatedAt = nowIso;
-      existingTeamAi.syncedToGit = true;
+      existingTeamAi.syncedToGit = false;
       teamAiAsset = existingTeamAi;
     } else {
       teamAiAsset = {
@@ -1149,7 +1242,7 @@ ${stepLines}
         title: `SOP: ${reqItem.title}`,
         content: contentMd,
         updatedAt: nowIso,
-        syncedToGit: true,
+        syncedToGit: false,
       };
       state.teamAiAssets.push(teamAiAsset);
     }
@@ -1359,7 +1452,7 @@ ${stepLines}
     if (existing) {
       existing.content = asset.contentMd;
       existing.updatedAt = new Date().toISOString();
-      existing.syncedToGit = true;
+      existing.syncedToGit = false;
     } else {
       state.teamAiAssets.push({
         path: gitPath,
@@ -1367,7 +1460,7 @@ ${stepLines}
         title: asset.title,
         content: asset.contentMd,
         updatedAt: new Date().toISOString(),
-        syncedToGit: true,
+        syncedToGit: false,
       });
     }
 
@@ -1396,7 +1489,7 @@ ${stepLines}
     }
     found.content = content;
     found.updatedAt = new Date().toISOString();
-    found.syncedToGit = true;
+    found.syncedToGit = false;
     syncTeamAiFileToDisk(found.path, found.content);
     saveState(state);
     res.json({ asset: found });
@@ -1427,6 +1520,79 @@ ${stepLines}
 
     saveState(state);
     res.json({ daemon, replayed });
+  });
+
+  app.get('/api/runtime/audit', (req, res) => {
+    const teamId = typeof req.query.teamId === 'string' ? req.query.teamId : undefined;
+    res.json({ entries: auditLog.list(teamId ? { teamId } : undefined) });
+  });
+
+  app.get('/api/runtime/commands', (_req, res) => {
+    res.json({ commands: store.replayCommands(), lastSeq: store.lastAppliedSeq() });
+  });
+
+  // 新增 3 态（BLOCKED_BY_RESOURCE / QUARANTINED / WAITING_APPROVAL）的真实生产者。
+  app.post('/api/tasks/:id/resource-transition', (req, res) => {
+    const task = state.tasks.find((t) => t.id === req.params.id);
+    if (!task) {
+      res.status(404).json({ error: '任务不存在' });
+      return;
+    }
+    const body = (req.body ?? {}) as { kind?: unknown; commandId?: unknown };
+    const allowedKinds: ResourceKind[] = [
+      'BLOCK_RESOURCE', 'RELEASE_RESOURCE', 'QUARANTINE', 'RELEASE_QUARANTINE',
+      'WAIT_APPROVAL', 'APPROVE', 'CANCEL',
+    ];
+    if (typeof body.kind !== 'string' || !allowedKinds.includes(body.kind as ResourceKind)) {
+      res.status(400).json({ error: `非法 kind，允许: ${allowedKinds.join(' / ')}` });
+      return;
+    }
+    const commandId =
+      typeof body.commandId === 'string' && body.commandId.trim()
+        ? body.commandId
+        : `resource-${task.id}-${Date.now()}`;
+    const submitted = commandBus.submit({
+      commandId,
+      taskId: task.id,
+      kind: body.kind as LoopCommandKind,
+    });
+    if (!submitted.accepted) {
+      res.status(submitted.duplicate ? 409 : 400).json({
+        error: submitted.reason ?? '命令被拒绝',
+        duplicate: submitted.duplicate,
+      });
+      return;
+    }
+    const outcome = applyResourceTransition(task, body.kind as ResourceKind);
+    if (!outcome.ok) {
+      // 命令已入 append-only 日志，这是审计事实，不回滚日志。
+      res.status(400).json({ error: outcome.reason, task });
+      return;
+    }
+    const idx = state.tasks.findIndex((t) => t.id === task.id);
+    state.tasks[idx] = outcome.node;
+    saveState(state);
+    res.json({
+      task: outcome.node,
+      from: outcome.from,
+      to: outcome.to,
+      ok: true,
+      requirement: state.requirements.find((r) => r.id === outcome.node.reqId),
+    });
+  });
+
+  // Q5 红线：只产出草案，绝不自动改写已发布 SOP，也不写任何文件。
+  app.post('/api/tasks/:id/retrospective', (req, res) => {
+    const task = state.tasks.find((t) => t.id === req.params.id);
+    if (!task) {
+      res.status(404).json({ error: '任务不存在' });
+      return;
+    }
+    res.json({
+      ...deriveRetrospective(task),
+      taskId: task.id,
+      note: '仅产出 Skill 草案；必须经人审 MR 才能改写已发布 SOP。本端点不写任何文件。',
+    });
   });
 
   app.post('/api/reset', (_req, res) => {

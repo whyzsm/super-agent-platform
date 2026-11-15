@@ -21,7 +21,7 @@
 
 - 两个 skill 文件头部是 `---` 包裹的 YAML：`name` / `triggers`（数组）/ `scope` / `version`，正文为中文 SOP。
 - 解析由 `src/engine/stateMachine.ts` 的 `parseSkillFrontmatter()`（`:298`）与 `extractSkillDraft()`（`:347`）负责；`POST /api/requirements/:id/solidify-sop`（`server.ts:919`）与 `POST /api/memories/:id/approve`（`:1202`）会把内容经 `syncTeamAiFileToDisk()`（`:38`）写成本地 `.teamai/skills/*.md`。
-- 写盘后 `syncedToGit` 被置 `true`，但**没有任何 git commit / MR**，见 [backend/state-persistence.md](../backend/state-persistence.md)。
+- 写盘后 `syncedToGit` 保持 `false`（**没有任何 git commit / MR**），见 [backend/state-persistence.md](../backend/state-persistence.md)。
 
 ## 门禁脚本与工程实际不一致（重点）
 
@@ -42,7 +42,7 @@
 ## 常见错误
 
 - 把 `pnpm lint && pnpm typecheck && pnpm test` 当本仓库的验证命令照抄执行。
-- 以 `syncedToGit: true` 推断已推送远端，或以为门禁脚本真的跑过。
+- 以"文件写盘成功"推断已推送远端；`syncedToGit` 恒 false，只有真正 `git commit` + MR 后才可置 true。
 - 把讨论稿里的云端记忆 / durable workflow 写成当前已实现的能力。
 
 ## 验证

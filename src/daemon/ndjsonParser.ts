@@ -28,6 +28,29 @@ export function parseCliNdjsonLine(
   try {
     parsed = JSON.parse(trimmed) as Record<string, unknown>;
   } catch {
+    // 非法 JSON 纯文本同样要过 Danger Gate：否则 `rm -rf /` 等纯文本命令会绕过拦截。
+    const danger = detectDangerousCommand(trimmed);
+    if (danger.dangerous) {
+      const { redacted, hitCount } = redactSecrets(trimmed);
+      return {
+        dangerIntercept: {
+          rule: danger.rule ?? 'DANGER_COMMAND',
+          reason: danger.reason ?? '拦截高危命令',
+          command: trimmed,
+        },
+        event: {
+          id: `ev-${seq}`,
+          ts: nowTs,
+          seq,
+          kind: 'acp_intercept',
+          title: `ACP 拦截高危指令 (${danger.rule})`,
+          detail: redacted,
+          status: 'blocked',
+          redactedHits: hitCount,
+        },
+        terminalChunk: `[${provider}] [acp-guard] BLOCKED: ${redacted}`,
+      };
+    }
     const { redacted } = redactSecrets(trimmed);
     return { terminalChunk: redacted };
   }

@@ -11,7 +11,7 @@
 
 现在卡住后续实施的不是代码，是 **4 个决策**（Q4、Q11、Q1、Q5）+ **2 个授权**（`git push`、真实模型 CLI 探测）+ **若干基础设施缺口**；本材料只把选项、代价、拍板人与影响摆清楚，**不替用户拍板**。
 
-> 仓库现状（截至成稿）：本地领先 `origin/main`（`8eae911`）若干提交、**未 push**，提交数随实施推进变化，以 `git rev-list --left-right --count origin/main...HEAD` 为准；S0-1（门禁脚本对齐）、S0-2（包标识）、S0-4（状态机 8→11 态）、S1-6（真实 verifier 扩展为 `lint` + `unit_test`）已完成，测试 37 用例全绿；S0-3 技术部分（去掉硬编码 IM secret、state 脱敏、加忽略规则、停止跟踪）已完成，**清理 git 历史仍未做**；S0-5、S0-6 需用户单独授权（额度消耗 / 外部动作）。
+> 仓库现状（截至成稿）：本地领先 `origin/main`（`8eae911`）若干提交、**未 push**，以 `git rev-list --left-right --count origin/main...HEAD` 为准；S0-1/2/3/4、S1-6 已关闭，另落地 Ports & Adapters 三端口（原子持久化 / 本地身份 RBAC / 幂等命令总线）与 3 态生产者，测试 99 用例全绿、默认走真实运行时；**清理 git 历史仍未做**；S0-5、S0-6 需用户单独授权（额度消耗 / 外部动作）。详见 `docs/superagent-unblock-solution-v1.md`。
 
 ---
 

@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { parseCliNdjsonLine } from '../../daemon/ndjsonParser';
+import { redactSecrets } from '../../engine/stateMachine';
 import type {
   AgentProvider,
   AgentRunnerAdapter,
@@ -10,7 +11,8 @@ import type {
  * 真实 spawn 的 headless-json 适配器，实现 src/protocol/index.ts 的 AgentRunnerAdapter。
  * 默认命令为 claude -p --output-format stream-json；可用 SUPERAGENT_CLI_COMMAND /
  * SUPERAGENT_CLI_ARGS 指向任意输出 NDJSON 的本地命令（用于链路自检）。
- * stdout 每行先经 parseCliNdjsonLine() 脱敏与危险命令拦截，再归一化。
+ * stdout 每行先经 parseCliNdjsonLine() 脱敏与危险命令拦截，再归一化；
+ * stderr 同样先脱敏再下发，避免密钥从错误流泄漏。
  */
 
 export interface HeadlessJsonAdapterOptions {
@@ -27,16 +29,34 @@ function argsFromEnv(): string[] | undefined {
   return raw && raw.trim() ? raw.trim().split(/\s+/) : undefined;
 }
 
+/**
+ * 每个 spawn 会话独立的序列号计数器（按 sessionId 维护）：首次调用返回 1。
+ * 从 adapter 实例级 `let seq` 改为按会话隔离，保证多个 spawn 各自从 1 开始。
+ */
+export function createSessionSeq(): (sessionId: string) => number {
+  const counters = new Map<string, number>();
+  return (sessionId: string): number => {
+    const next = (counters.get(sessionId) ?? 0) + 1;
+    counters.set(sessionId, next);
+    return next;
+  };
+}
+
 export function createHeadlessJsonAdapter(
   options: HeadlessJsonAdapterOptions = {},
 ): AgentRunnerAdapter {
   const provider: AgentProvider = options.provider ?? 'claude-code';
   const sessions = new Map<string, ChildProcessWithoutNullStreams>();
-  let listener: ((event: NormalizedAgentEvent) => void) | null = null;
-  let seq = 0;
+  const listeners = new Set<(event: NormalizedAgentEvent) => void>();
 
   const emit = (event: NormalizedAgentEvent): void => {
-    listener?.(event);
+    for (const listener of listeners) {
+      try {
+        listener(event);
+      } catch {
+        // 单个 listener 抛异常不影响其他 listener
+      }
+    }
   };
 
   return {
@@ -44,7 +64,7 @@ export function createHeadlessJsonAdapter(
     mode: 'headless-json',
 
     onEvent(cb) {
-      listener = cb;
+      listeners.add(cb);
     },
 
     async spawn(params) {
@@ -63,6 +83,8 @@ export function createHeadlessJsonAdapter(
 
       const sessionId = params.taskId;
       sessions.set(sessionId, child);
+      // 每个 spawn 独立计数器，该会话的事件 seq 从 1 开始
+      const nextSeq = createSessionSeq();
 
       let buffer = '';
       child.stdout.setEncoding('utf-8');
@@ -72,7 +94,7 @@ export function createHeadlessJsonAdapter(
         buffer = lines.pop() ?? '';
         for (const line of lines) {
           if (!line.trim()) continue;
-          const parsed = parseCliNdjsonLine(provider, line, ++seq);
+          const parsed = parseCliNdjsonLine(provider, line, nextSeq(sessionId));
           if (parsed.dangerIntercept) {
             emit({
               type: 'thought',
@@ -96,7 +118,7 @@ export function createHeadlessJsonAdapter(
 
       child.stderr.setEncoding('utf-8');
       child.stderr.on('data', (chunk: string) => {
-        emit({ type: 'terminal_chunk', stream: 'stderr', data: chunk });
+        emit({ type: 'terminal_chunk', stream: 'stderr', data: redactSecrets(chunk).redacted });
       });
 
       child.on('error', (err: Error) => {

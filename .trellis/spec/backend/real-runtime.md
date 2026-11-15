@@ -1,6 +1,6 @@
 # 真实运行时（受控开关）
 
-> P0 垂直切片新增。`SUPERAGENT_REAL_RUNTIME=1` 才启用；未设置时 `server.ts` 仍是原有演示态，**字节级行为不变**。
+> P0 垂直切片新增，**现为默认行为**：未设置任何开关时走真实 verifier + 旁路事件日志；`SUPERAGENT_DEMO_MODE=1` 或 `SUPERAGENT_REAL_RUNTIME=0` 才回退原有演示态（4 项硬编码全绿）。`SUPERAGENT_REAL_RUNTIME=1` 仍为真，保持旧配置兼容。
 
 ## 何时适用
 
@@ -18,7 +18,7 @@
 
 ## 开关与端口约定
 
-- `SUPERAGENT_REAL_RUNTIME=1`：启用真实 verifier 与事件日志；关闭时 `verifierChecks` 仍是原 4 项硬编码全绿。
+- 默认启用真实 verifier（`lint` + `unit_test` 两项真实退出码）与事件日志；`SUPERAGENT_DEMO_MODE=1` 时 `verifierChecks` 才回到原 4 项硬编码全绿。
 - `SUPERAGENT_CLI_COMMAND`：**必须显式设置**才能调用 `real-spawn`，否则返回 `400`，避免默认发起模型调用。
 - `SUPERAGENT_CLI_ARGS`：按空白切分的命令参数，支持 `{prompt}` 占位符；默认值是 `claude -p --output-format stream-json {prompt}`。自检命令不能含空格。
 - 真实路径只产出真实执行的两项 `lint` / `unit_test` 结果：`lint` 来自 `npm run lint`（实为 `tsc --noEmit`），`unit_test` 来自 `npm test`。`typecheck` 无独立 npm 脚本（tsc 已由 lint 覆盖，不重复记账）、`cross_review` 无真实异构模型执行手段，二者**不产出任何** `VerifierCheck`，既不伪造 `passed:true` 也不假造 `passed:false`。
@@ -39,13 +39,13 @@
 
 - **真实模型 CLI 集成未验证**：`codex exec` 与 `claude -p --output-format stream-json` 的登录态、返回码、事件行结构未实测；验收用本地 `node -e` NDJSON 源做链路自检，不以模拟结果顶替真实调用。详见任务 `research/cli-probe.md`。
 - 依赖缺陷已修复：`esbuild` 升到 `^0.28.0`、`npm install` 无需 `--legacy-peer-deps`；新增 `npm test`（37 用例）。原 `bun.lock` 实为 npm lock v2，已归位为 `package-lock.json`（v3）；项目 `.gitignore` 用 `!package-lock.json` 覆盖了全局忽略规则。
-- 仍为演示态：`.superagent-state.json` 全量覆盖写、`syncedToGit` 无 git 操作、`worktreePath` 只是字符串；`saveState()` 写失败与默认 IM 密钥两项已修（stderr 告警 / env 注入 + 503）。
+- 已修：状态改原子快照（临时文件 + rename）、`saveState()` 写失败 stderr 告警、默认 IM 密钥改 env 注入 + 503、`syncedToGit` 恒 false、`eventLog` seq 实时重算。仍为演示态：`worktreePath` 只是字符串、真实模型 CLI 登录态未实测。
 - `eventLog.ts` 的 `EVENT_FILE` 是基于 `process.cwd()` 的模块常量，`cachedLastSeq` 初始化后不再重读文件；多进程或外部追加时 seq 可能冲突。S1-1 拆 `server.ts` 时应改为可注入路径并明确单写者约束。
 - 未建 worktree：`real-spawn` 的 cwd 固定为仓库根，不是 `worktreePath` 字符串指向的目录。
 
 ## 常见错误
 
-- 把 `SUPERAGENT_REAL_RUNTIME` 当成全局替换演示态的开关——它只改 `advance` 的一个分支与两个新增端点。
+- 把 `SUPERAGENT_DEMO_MODE` 当成"关闭所有真实能力"的总开关——它只回退 `advance` 验证分支与受控端点，不影响已接入的原子持久化、RBAC、审计。
 - 在真实路径里补齐 4 项检查以满足 UI 显示——`typecheck` / `cross_review` 无真实执行手段，硬编码等于伪造未执行的门禁。
 - 把事件日志当状态源重放并再次 `saveState()`；它是旁路证据，重放只读。
 - 直接调用 `real-spawn` 而未设 `SUPERAGENT_CLI_COMMAND`，期望它自动跑默认模型 CLI（会被 400 拒绝）。

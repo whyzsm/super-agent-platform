@@ -1,15 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
-import { createHeadlessJsonAdapter } from './headlessJson';
+import { createHeadlessJsonAdapter, createSessionSeq } from './headlessJson';
 import { OfflineSeqQueue, parseCliNdjsonLine } from '../../daemon/ndjsonParser';
 import { detectDangerousCommand } from '../../engine/stateMachine';
 import type { DaemonEnvelope, NormalizedAgentEvent } from '../../protocol';
 
-// headlessJson.ts 只导出 createHeadlessJsonAdapter / HeadlessJsonAdapterOptions，
-// 不 re-export parser/queue。NDJSON 解析、脱敏、危险命令拦截是它 import 的
-// parseCliNdjsonLine（以及其依赖的 stateMachine 规则）真实行为；OfflineSeqQueue
-// 真实存在于 ndjsonParser.ts。以下从各自真实模块导入并断言，不臆造 API。
+// headlessJson.ts 导出 createHeadlessJsonAdapter / HeadlessJsonAdapterOptions /
+// createSessionSeq（按会话的 seq 计数器），不 re-export parser/queue。NDJSON 解析、
+// 脱敏、危险命令拦截是它 import 的 parseCliNdjsonLine（以及其依赖的 stateMachine
+// 规则）真实行为；OfflineSeqQueue 真实存在于 ndjsonParser.ts。以下从各自真实模块
+// 导入并断言，不臆造 API。
 
 test('headlessJson: createHeadlessJsonAdapter 暴露约定的 provider/mode 与完整 Adapter 方法', () => {
   const defaultAdapter = createHeadlessJsonAdapter();
@@ -258,4 +259,165 @@ test('headlessJson: OfflineSeqQueue 去重 seq / ackUpTo 单调 / replayFrom 严
   queue.ackUpTo(8);
   assert.equal(queue.pendingCount(), 0);
   assert.deepEqual(queue.replayFrom(0), []);
+});
+
+test('headlessJson: onEvent 支持多 listener，先注册的不被覆盖且单个抛错被隔离', async () => {
+  const adapter = createHeadlessJsonAdapter();
+  const seen: string[] = [];
+  adapter.onEvent((event) => seen.push(`first:${event.type}`));
+  adapter.onEvent(() => {
+    throw new Error('listener boom');
+  });
+  adapter.onEvent((event) => seen.push(`third:${event.type}`));
+
+  await adapter.approveTool('session-1', 'call-1', true);
+
+  assert.deepEqual(
+    seen,
+    ['first:thought', 'third:thought'],
+    '三个 listener 都应被调用；中间的抛错不阻断其余，且后注册不覆盖先注册',
+  );
+});
+
+test('headlessJson: 两个 spawn 的 seq 各自从 1 开始（按 sessionId 独立计数）', () => {
+  // 先核对 parseCliNdjsonLine 把 seq 真实编码进事件
+  assert.equal(parseCliNdjsonLine('codex', '{}', 1).event?.id, 'ev-1');
+  assert.equal(parseCliNdjsonLine('codex', '{}', 1).event?.seq, 1);
+  assert.equal(parseCliNdjsonLine('codex', '{}', 2).event?.id, 'ev-2');
+
+  // adapter 每个 spawn 使用的按会话计数器：两个独立 spawn 各自从 1 开始
+  const spawnA = createSessionSeq();
+  const spawnB = createSessionSeq();
+  assert.equal(spawnA('task-A'), 1);
+  assert.equal(spawnA('task-A'), 2);
+  assert.equal(spawnB('task-B'), 1, '第二个 spawn 起点同样为 1，不共享实例级全局 seq');
+  assert.equal(spawnB('task-B'), 2);
+  assert.equal(spawnA('task-A'), 3);
+});
+
+test('headlessJson: 同一 adapter 两次 spawn 各自独立运行、互不串扰', async () => {
+  const lines = [{ type: 'message', content: 'ping' }];
+  const script = `for (const l of ${JSON.stringify(lines)}) process.stdout.write(JSON.stringify(l) + String.fromCharCode(10));`;
+  const adapter = createHeadlessJsonAdapter({
+    provider: 'codex',
+    command: process.execPath,
+    args: ['-e', script],
+    timeoutMs: 5000,
+  });
+
+  let stdoutChunks = 0;
+  let completed = 0;
+  let resolveDone: () => void = () => {};
+  const done = new Promise<void>((resolve) => {
+    resolveDone = resolve;
+  });
+  adapter.onEvent((event) => {
+    if (event.type === 'terminal_chunk' && event.stream === 'stdout') {
+      stdoutChunks += 1;
+    } else if (event.type === 'completed') {
+      completed += 1;
+      if (completed === 2) resolveDone();
+    }
+  });
+
+  await adapter.spawn({
+    taskId: 'task-multi-1',
+    worktreePath: os.tmpdir(),
+    prompt: '',
+    systemRulesPath: '',
+    env: {},
+  });
+  await adapter.spawn({
+    taskId: 'task-multi-2',
+    worktreePath: os.tmpdir(),
+    prompt: '',
+    systemRulesPath: '',
+    env: {},
+  });
+  await done;
+
+  assert.equal(completed, 2, '两个会话都应各自收到 completed');
+  assert.equal(stdoutChunks, 2, '两个会话各自的 NDJSON 行都下发，互不丢失');
+});
+
+test('headlessJson: stderr 原始输出先经 redactSecrets 脱敏再 emit', async () => {
+  const script = `process.stderr.write('fatal sk-live1234567890abcdef boom' + String.fromCharCode(10));`;
+  const adapter = createHeadlessJsonAdapter({
+    provider: 'workbuddy',
+    command: process.execPath,
+    args: ['-e', script],
+    timeoutMs: 5000,
+  });
+
+  const stderrChunks: string[] = [];
+  let resolveDone: () => void = () => {};
+  const done = new Promise<void>((resolve) => {
+    resolveDone = resolve;
+  });
+  adapter.onEvent((event) => {
+    if (event.type === 'terminal_chunk' && event.stream === 'stderr') {
+      stderrChunks.push(event.data);
+      resolveDone();
+    }
+  });
+
+  await adapter.spawn({
+    taskId: 'task-stderr-1',
+    worktreePath: os.tmpdir(),
+    prompt: '',
+    systemRulesPath: '',
+    env: {},
+  });
+  await done;
+
+  assert.ok(stderrChunks.length >= 1, 'stderr 应产生 terminal_chunk 事件');
+  assert.ok(stderrChunks.some((data) => data.includes('[REDACTED_API_KEY]')));
+  assert.equal(
+    stderrChunks.some((data) => data.includes('sk-live')),
+    false,
+    'stderr 密钥不得原样下发',
+  );
+});
+
+test('headlessJson: adapter spawn 收到非法 JSON 纯文本高危命令 → 同样 [blocked] 拦截', async () => {
+  const script = `process.stdout.write('rm -rf /' + String.fromCharCode(10));`;
+  const adapter = createHeadlessJsonAdapter({
+    provider: 'workbuddy',
+    command: process.execPath,
+    args: ['-e', script],
+    timeoutMs: 5000,
+  });
+
+  const thoughts: string[] = [];
+  const stdoutChunks: string[] = [];
+  let resolveDone: () => void = () => {};
+  const done = new Promise<void>((resolve) => {
+    resolveDone = resolve;
+  });
+  adapter.onEvent((event) => {
+    if (event.type === 'thought') {
+      thoughts.push(event.content);
+    } else if (event.type === 'terminal_chunk' && event.stream === 'stdout') {
+      stdoutChunks.push(event.data);
+    } else if (event.type === 'completed') {
+      resolveDone();
+    }
+  });
+
+  await adapter.spawn({
+    taskId: 'task-plain-danger',
+    worktreePath: os.tmpdir(),
+    prompt: '',
+    systemRulesPath: '',
+    env: {},
+  });
+  await done;
+
+  assert.ok(thoughts.some((content) => content.startsWith('[blocked]')), '纯文本高危命令必须被拦截');
+  assert.ok(thoughts.some((content) => content.includes('rm -rf /')));
+  assert.equal(
+    stdoutChunks.some((data) => data.includes('rm -rf /')),
+    false,
+    '被拦截的命令不得作为 stdout terminal_chunk 下发',
+  );
 });

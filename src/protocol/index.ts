@@ -191,6 +191,11 @@ export interface TeamAiAsset {
   title: string;
   content: string;
   updatedAt: string;
+  /**
+   * 是否真的推送到 Git 远端（commit + MR）。当前实现只写本地 `.teamai/*.md`，
+   * 没有任何 git 操作，因此恒为 false；S2-2 接入 Git-native Asset Registry 后才可能为 true。
+   * 不要把本地写盘成功当成已同步。
+   */
   syncedToGit: boolean;
 }
 

@@ -42,7 +42,7 @@
 
 | 架构稿 P0 原义 | 垂直切片实际 | 补齐阶段 |
 | --- | --- | --- |
-| Postgres + event log 替换单文件 JSON | 本地 NDJSON 事件日志叠加，`.superagent-state.json` 仍全量覆盖写 | S1 |
+| Postgres + event log 替换单文件 JSON | 已落地本地 `StateStore`（原子快照 + append-only 命令日志）与 `eventLog.ts` 旁路轨迹；Postgres adapter 仍待 S1-2 | S1 |
 | 拆分 `server.ts` | 只在原文件内加受控分支与 2 个端点，仍为 1300+ 行单文件 | S1 |
 | 建议 ACP adapter | headless-json adapter，ACP 未接 | S1 |
 | `git worktree` 真建真删、凭据网关 | 未建 worktree，cwd 固定仓库根；无凭据注入 | S1（Q4 门禁） |
@@ -55,8 +55,8 @@
 | --- | --- | --- | --- |
 | D1 | `.teamai/hooks/pre-merge-gate.sh` 与 `AGENTS.md` 曾要求 `pnpm lint/typecheck/test`，实际只有 `lint` + `test` 且用 npm | 门禁脚本不可直接运行 | **S0-1 已修复**（脚本现跑 `npm run lint && npm test`） |
 | D2 | `package.json` 的 `name` 曾是 `react-example` | 包标识错误 | **S0-2 已修复**（`super-agent-platform`） |
-| D3 | `.superagent-state.json` 曾含内部 hostname、模拟数据、默认 IM 密钥明文 | 合规风险（Q11） | **S0-3 技术部分已做**（脱敏 + env 注入 + 停止跟踪）；**git 历史清理未做，需 Q11 拍板** |
-| D4 | `tsconfig` 未开 `strict`；`syncedToGit=true` 无 git 操作 | 可靠性 | S0 已修 `saveState()` 静默吞失败（改 stderr 告警）；strict / syncedToGit 仍待 S1 |
+| D3 | `.superagent-state.json` 曾含内部 hostname、模拟数据、默认 IM 密钥明文 | 合规风险（Q11） | **S0-3 已关闭当前版本**（脱敏 + env 注入 + 停止跟踪 + 原子写）；**git 历史清理未做，需 Q11 拍板** |
+| D4 | `tsconfig` 未开 `strict` | 可靠性 | 已修 `saveState()` 静默吞失败（原子写 + stderr 告警）、`syncedToGit` 恒 false、损坏快照隔离留证；仅 `strict` 仍待 S1 |
 | D5 | 状态机原 8 态缺 `BLOCKED_BY_RESOURCE` / `QUARANTINED` / `WAITING_APPROVAL`（Q12） | 长时等待与污染隔离无法表达 | **S0-4 已补齐（11 态，18 用例全绿）**；新状态的生产者逻辑仍待 S1/S3 接入 |
 | D6 | 真实模型 CLI 登录态 / stream-json 事件结构未实测 | adapter 端到端未闭环 | S0（需授权） |
 | D7 | 本地提交未 push（数量随实施推进变化） | 远端无最新代码 | S0（需授权） |
@@ -222,7 +222,7 @@ flowchart LR
 | M14 | Workspace Manager | S1 / S5 | S1-3、S5-2 | `worktreePath` 只是字符串，未真建 |
 | M15 | Credential Broker | S1 | S1-4 | 未开始；默认 IM 密钥已改为 env 注入（S0-3 技术部分） |
 | M16 | Memory Hub | S2 / S4 | S2-3、S4-5 | 状态文件里的 `MemoryAsset` + trigram 召回 |
-| M17 | Asset Registry（Git-native） | S2 / S4 | S2-2、S4-3 | `.teamai/` 本地文件，`syncedToGit` 假状态 |
+| M17 | Asset Registry（Git-native） | S2 / S4 | S2-2、S4-3 | `.teamai/` 本地文件，`syncedToGit` 已改为恒 false（不再假状态） |
 | M18 | Recall & Context Assembly | S2 / S4 | S2-4、S4-5 | `recallEngine.ts` 四级 ACL + trigram |
 | M19 | Policy & Audit | S2 | **S2-9（新增补齐）** | 仅 `detectDangerousCommand()` / `redactSecrets()` 散落规则 |
 | M20 | Observability & Eval | S3 | S3-6 | 内存事件数组 + SSE，无 trace/cost |
@@ -260,7 +260,7 @@ flowchart LR
 
 | 演进 | 现状 | 目标 | 兼容策略 |
 | --- | --- | --- | --- |
-| 控制面状态 | `.superagent-state.json` 全量覆盖写 | Postgres 表 + append-only event log | 事件日志格式沿用 `src/runtime/eventLog.ts`；提供一次性迁移脚本与回退快照 |
+| 控制面状态 | 本地 `FileStateStore` 原子快照 + append-only 命令日志（已落地） | Postgres 表 + append-only event log | 换 `StateStore` adapter 即可，业务不动；见 `backend/platform-ports.md` |
 | 事件契约 | `DaemonEnvelope`（seq/ack） | v2 补 `trace_id` / `idempotency_key` / `lease` | 字段只增不改；旧消费者忽略未知字段 |
 | 共享类型 | `src/protocol/index.ts` 单一契约 | 增加 `HandoffContract`、`AgentDefinition`、`SopDefinition` | 只放 protocol；展示副本 `PROTOCOL_SPEC` 需同步核对 |
 | 团队资产 | 本地 `.teamai/*.md`、`syncedToGit` 假状态 | Git 仓为权威，`asset_id + version + commit_sha` 锚定 | 现有 `.teamai/` 作为初始导入源 |

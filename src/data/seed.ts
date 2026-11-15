@@ -803,7 +803,7 @@ version: 2
       path: '.teamai/AGENTS.md',
       category: 'agents_md',
       title: '团队 Agent 全局行为规范 (AGENTS.md)',
-      syncedToGit: true,
+      syncedToGit: false,
       updatedAt: '2026-11-14T20:00:00Z',
       content: `# SuperAgent 团队研发协作规范 (AGENTS.md)
 
@@ -822,7 +822,7 @@ version: 2
       path: '.teamai/rules/sandbox-guard.md',
       category: 'rule',
       title: '高危指令与敏感路径拦截规则',
-      syncedToGit: true,
+      syncedToGit: false,
       updatedAt: '2026-11-13T14:10:00Z',
       content: `# Sandbox Guard Rules
 - BLOCK & TRIGGER DANGER_GATE:
@@ -835,7 +835,7 @@ version: 2
       path: '.teamai/skills/webhook-replay-guard.md',
       category: 'skill',
       title: 'Skill: Webhook 签名与防重放窗口',
-      syncedToGit: true,
+      syncedToGit: false,
       updatedAt: '2026-11-10T09:30:00Z',
       content: `---
 name: "sop-webhook-replay-guard"
@@ -852,7 +852,7 @@ version: 2
       path: '.teamai/hooks/pre-merge-gate.sh',
       category: 'hook',
       title: 'Hook: 确定性验证门禁脚本',
-      syncedToGit: true,
+      syncedToGit: false,
       updatedAt: '2026-11-11T11:20:00Z',
       content: `#!/usr/bin/env bash
 set -euo pipefail

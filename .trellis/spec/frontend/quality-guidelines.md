@@ -37,5 +37,5 @@
 - 在 `src/components/TeamAiProtocolView.tsx` 的 `PROTOCOL_SPEC` 字符串里复制共享类型文本，却不同步 `src/protocol/index.ts` → 契约漂移。
 - 在组件里硬编码「标准 Feature 开发流」等标签（`useWorkspaceStore.ts:152` 已有一处），而不复用 `SOP_TEMPLATE_LABELS`。
 - 把 `.teamai` 门禁脚本里的 `pnpm ...` 当本仓库可用命令。
-- 以演示态的"门禁通过 / syncedToGit: true"为依据跳过 `npm run lint`。
+- 以演示态的"门禁通过"或"资产已写盘"为依据跳过 `npm run lint`；真实运行时默认开启，门禁结果必须来自真实退出码。
 - 新建 `src/hooks/` 目录或写自定义 hook——项目无此模式（本文件由 `hook-guidelines.md` 重命名而来，主题已改为展示映射，见 [presentation-maps.md](./presentation-maps.md)）。

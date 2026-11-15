@@ -15,6 +15,10 @@ coverage/
 .cursor/
 .workbuddy/
 .superagent-events.jsonl
+.superagent-commands.jsonl
+.superagent-loop.jsonl
+.superagent-audit.jsonl
+.superagent-state.json.corrupt-*
 
 # Trellis：共享规范、工作流、配置与运行时脚本；本地运行数据仍排除
 .trellis/*

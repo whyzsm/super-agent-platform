@@ -165,3 +165,66 @@ test('eventLog: 空日志文件读取返回空数组', async () => {
     assert.deepEqual(mod.replayRuntimeEvents('t'), []);
   });
 });
+
+test('eventLog: 外部追加更高 seq 后，append 从文件真实 max 续写，不产生重复序列号', async () => {
+  await withFreshEventLog(async ({ mod, logPath }) => {
+    const e1 = mod.appendRuntimeEvent({ traceId: 't', type: 'a' });
+    const e2 = mod.appendRuntimeEvent({ traceId: 't', type: 'b' });
+    assert.deepEqual([e1.seq, e2.seq], [1, 2]);
+
+    // 模拟外部进程/另一进程手工往同一日志追加一条更高 seq 的合法行
+    const external = {
+      seq: 10,
+      ts: '2026-01-01T00:00:00Z',
+      traceId: 'external',
+      type: 'injected',
+    };
+    fs.appendFileSync(logPath, `${JSON.stringify(external)}\n`, 'utf-8');
+
+    // lastEventSeq 必须反映文件真实值，而非陈旧缓存
+    assert.equal(mod.lastEventSeq(), 10);
+
+    const e3 = mod.appendRuntimeEvent({ traceId: 't', type: 'c' });
+    assert.equal(e3.seq, 11, '新 seq = 外部更高 seq(10) + 1，而非缓存旧值 2 + 1');
+
+    const seqs = mod.replayRuntimeEvents().map((event) => event.seq);
+    assert.deepEqual(seqs, [1, 2, 10, 11]);
+    assert.equal(new Set(seqs).size, seqs.length, '全局 seq 严格无重复');
+  });
+});
+
+test('eventLog: 每次 append 写入完整 JSON 行且以换行结尾（无半行）', async () => {
+  await withFreshEventLog(async ({ mod, logPath }) => {
+    for (let i = 0; i < 5; i += 1) {
+      mod.appendRuntimeEvent({ traceId: 't', type: `e${i}` });
+    }
+    const raw = fs.readFileSync(logPath, 'utf-8');
+    assert.ok(raw.endsWith('\n'), '每次追加都是完整的一行');
+    const lines = raw.split('\n').filter((line) => line.trim());
+    assert.equal(lines.length, 5);
+    for (const line of lines) {
+      assert.doesNotThrow(() => JSON.parse(line), '不得出现半行/残缺 JSON');
+    }
+  });
+});
+
+test('eventLog: 文件含损坏行时仍取到真实 max seq 续写，且 replay 跳过损坏行', async () => {
+  await withFreshEventLog(async ({ mod, logPath }) => {
+    mod.appendRuntimeEvent({ traceId: 't', type: 'a' }); // seq 1
+    fs.appendFileSync(logPath, 'half-written-{not json\n', 'utf-8');
+    fs.appendFileSync(
+      logPath,
+      `${JSON.stringify({ seq: 42, ts: '2026-01-01T00:00:00Z', traceId: 'x', type: 'external' })}\n`,
+      'utf-8',
+    );
+
+    const e = mod.appendRuntimeEvent({ traceId: 't', type: 'b' });
+    assert.equal(e.seq, 43, '损坏行不参与 max 计算，外部 seq=42 之后应为 43');
+    assert.equal(mod.lastEventSeq(), 43);
+    assert.deepEqual(
+      mod.replayRuntimeEvents().map((event) => event.seq),
+      [1, 42, 43],
+      '损坏行在 replay 中被过滤',
+    );
+  });
+});

@@ -30,13 +30,13 @@
 
 - `saveState()` 写失败已改为 `console.error` 向 `stderr` 输出明确错误（含错误 message），不抛错、不返回状态：客户端可能收到 `201` 但数据未落盘；`syncTeamAiFileToDisk()` 仍用 `try/catch` 静默忽略写失败。
 - `.superagent-state.json` 含内部主机名（`mac-studio-sh-01`、`ubuntu-ci-runner-04`）与模拟 DAG / 门禁数据，且被提交进仓库。
-- `syncedToGit` 在 `POST /api/requirements/:id/solidify-sop`、`POST /api/memories/:id/approve`、`PUT /api/teamai` 里被置 `true`，但**没有任何 git commit / MR**；它只表示写了本地 `.teamai/skills/*.md`。
+- `syncedToGit` 在 `POST /api/requirements/:id/solidify-sop`、`POST /api/memories/:id/approve`、`PUT /api/teamai` 里**恒为 `false`**：只写了本地 `.teamai/skills/*.md`，没有任何 git commit / MR。字段语义见 `src/protocol/index.ts` 的 JSDoc。
 - `src/components/TeamAiProtocolView.tsx` 的 `PGVECTOR_DDL` 只是 UI 展示字符串，不是真实建表。
 
 ## 常见错误
 
 - 假设 `saveState()` 失败会抛异常打挂服务——它不会，已改为 `stderr` 显式告警，别依赖返回值判断持久化成功。
-- 把 `syncedToGit: true` 当成"已推送远端"；当前无任何 git 操作。
+- 把本地 `.teamai/*.md` 写盘成功当成"已推送远端"；`syncedToGit` 恒 false，S2-2 接入 Git-native Asset Registry 前不会变 true。
 - 给 `PlatformState` 加字段却漏改 `createInitialSeedState()`，`/api/reset` 后该字段丢失。
 - 直接编辑 `.superagent-state.json` 期望热更新：`loadOrInitState()` 只在进程启动时读一次。
 

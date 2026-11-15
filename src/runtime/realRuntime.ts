@@ -7,8 +7,15 @@ import type { DagNode, VerifierCheck } from '../protocol';
  * 不新建第二套状态流转；事件日志只作旁路证据。
  */
 
+/**
+ * 默认走真实运行时（真实 verifier + 旁路事件日志），不再默认造假。
+ * 回退演示态：SUPERAGENT_DEMO_MODE=1 或 SUPERAGENT_REAL_RUNTIME=0。
+ * SUPERAGENT_REAL_RUNTIME=1 仍为真，保持旧配置向后兼容。
+ */
 export function isRealRuntimeEnabled(): boolean {
-  return process.env.SUPERAGENT_REAL_RUNTIME === '1';
+  if (process.env.SUPERAGENT_DEMO_MODE === '1') return false;
+  if (process.env.SUPERAGENT_REAL_RUNTIME === '0') return false;
+  return true;
 }
 
 export interface RealVerificationOutcome {

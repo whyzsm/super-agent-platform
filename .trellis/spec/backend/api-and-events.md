@@ -15,7 +15,8 @@
   - 需求与任务推进：`POST /api/requirements`、`/api/tasks/:id/advance|simulate-failure|simulate-danger|gate|ndjson|input|comments`、`POST /api/requirements/:id/solidify-sop`。
   - 集成：`GET /api/webhooks/im/card/:taskId`、`POST /api/webhooks/im`、`POST /api/mcp/recall`。
   - 资产与运维：`POST /api/memories/:id/approve|reject`、`PUT /api/teamai`、`POST /api/daemons/:machineId/replay`、`POST /api/reset`。
-  - 受控真实运行时（`SUPERAGENT_REAL_RUNTIME=1`，默认关闭）：`POST /api/tasks/:id/real-spawn`、`GET /api/runtime/events?traceId=...`；另 `POST /api/tasks/:id/advance` 的验证分支会切换为真实 lint 退出码。详见 [real-runtime.md](./real-runtime.md)。
+  - 真实运行时（**默认启用**，`SUPERAGENT_DEMO_MODE=1` 回退演示态）：`POST /api/tasks/:id/real-spawn`、`GET /api/runtime/events?traceId=...`；`advance` 的验证分支用 `npm run lint` + `npm test` 真实退出码。
+  - 本轮新增：`POST /api/tasks/:id/resource-transition`（3 态生产者）、`POST /api/tasks/:id/retrospective`（只产出人审草案）、`GET /api/runtime/audit`、`GET /api/runtime/commands`。详见 [platform-ports.md](./platform-ports.md)。
 - SSE：`sseClients: Set<Response>`（`server.ts:77`），`GET /api/stream` 注册、`broadcastEnvelope()`（`:79`）写 `data: <JSON>\n\n`，`setInterval` 约 8 秒心跳；客户端写失败即从 `Set` 删除。
 - 事件归一化：`parseCliNdjsonLine()`（`src/daemon/ndjsonParser.ts:18`）先 `redactSecrets()` 脱敏再按 shell / command 规则拦截；`OfflineSeqQueue`（`:104`）提供 `enqueue`（按 seq 去重排序）、`ackUpTo`、`replayFrom`、`pendingCount`。
 - IM 回调：`signImWebhookPayload` / `verifyImWebhookPayload`（`src/gateway/imWebhook.ts:16 / :20`）用 HMAC-SHA256 + `timingSafeEqual` + 300 秒重放窗口，`buildImApprovalCard()`（`:53`）产出 wecom `template_card` / feishu `interactive`；`IM_WEBHOOK_SECRET`（`server.ts:46`）只由 `process.env.IM_WEBHOOK_SECRET` 注入、无默认回退，缺失时 `GET /api/webhooks/im/card/:taskId` 与 `POST /api/webhooks/im` 返回 `503 { error: 'IM_WEBHOOK_SECRET is not configured' }`，并在服务启动日志一次性告警。

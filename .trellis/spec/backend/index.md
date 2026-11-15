@@ -1,6 +1,6 @@
-# 后端开发规范（SuperAgent 演示原型）
+# 后端开发规范（SuperAgent 本地闭环）
 
-> 面向 `server.ts` 与 `src/` 下服务端逻辑的本地约定。当前是"可交互流程演示原型"，不是生产平台：状态存本地 JSON、无真实 CLI / LLM / git 执行。
+> 面向 `server.ts` 与 `src/` 下服务端逻辑的本地约定。当前是**单机可运行的完整闭环**：真实确定性验证、原子状态快照、append-only 事件/命令日志、本地身份与 RBAC、不可变审计。真实模型 CLI 通过可注入 adapter 接入，生产外部服务（Postgres / OIDC / Temporal）通过可替换端口接入，见 [platform-ports.md](./platform-ports.md)。
 
 ---
 
@@ -10,23 +10,23 @@
 
 ## 当前实现状态（务必先读）
 
-- 演示态：`server.ts` 是约 45KB 的单文件 Express，全部数据来自 `createInitialSeedState()`（`src/data/seed.ts`）。
-- `server.ts` 没有任何 `child_process` / `spawn` 真实 CLI，也没有任何 LLM 调用（`@google/genai` 在 `package.json` 依赖里但 `server.ts` 未 import）。
-- `verifierChecks` 硬编码 `passed: true`，靠端点手工推进与注入假事件。
-- `worktreePath` / `worktreeBranch` 只是字符串字段，没有 `git worktree add`。
-- `syncedToGit = true` 但无 git commit / MR；`/api/mcp/recall` 是普通 HTTP POST，不是 MCP server。
-- **默认仍是演示态**；`SUPERAGENT_REAL_RUNTIME=1` 时 `advance` 的 `RUNNING → VERIFYING` 分支改用真实 lint 退出码并写 append-only 事件日志，另有两个受控端点。详见 [real-runtime.md](./real-runtime.md)。
+- `server.ts` 仍是单文件 Express，但已接入 `src/store/`（原子状态快照 + 命令日志）、`src/identity/`（身份 / RBAC / 审计）、`src/loop/`（幂等命令总线 + 3 态生产者）。
+- **默认走真实运行时**：`advance` 的 `RUNNING → VERIFYING` 分支由 `runRealVerifier()` 真实执行 `npm run lint` + `npm test`；回退演示态用 `SUPERAGENT_DEMO_MODE=1` 或 `SUPERAGENT_REAL_RUNTIME=0`。详见 [real-runtime.md](./real-runtime.md)。
+- 真实 CLI 通过 `createHeadlessJsonAdapter()` spawn，但 `real-spawn` 强制要求显式 `SUPERAGENT_CLI_COMMAND`，不会默认发起模型调用；未实测登录态与额度。
+- `worktreePath` / `worktreeBranch` 仍是字符串字段，没有 `git worktree add`。
+- `syncedToGit` **恒为 false**（无 git commit / MR，本地写盘不等于同步）；`/api/mcp/recall` 是普通 HTTP POST，不是 MCP server。
 
 ## 文件导航
 
 | 文件 | 主题 |
 |------|------|
 | [directory-structure.md](./directory-structure.md) | 单文件 server + `src/` 领域分层与落点 |
-| [state-persistence.md](./state-persistence.md) | `.superagent-state.json` 全量读写与静默失败 |
+| [state-persistence.md](./state-persistence.md) | 原子快照、命令日志与损坏快照隔离 |
 | [error-handling.md](./error-handling.md) | 统一 `{ error }` 响应与吞掉的异常 |
 | [api-and-events.md](./api-and-events.md) | 端点、SSE、NDJSON、IM webhook |
 | [quality-guidelines.md](./quality-guidelines.md) | 纯函数、脱敏、lint / 测试现状 |
-| [real-runtime.md](./real-runtime.md) | 受控真实运行时：开关、模块、端点、实测结果与 deferred 项 |
+| [real-runtime.md](./real-runtime.md) | 真实运行时：开关、模块、端点、实测结果与 deferred 项 |
+| [platform-ports.md](./platform-ports.md) | 三端口（StateStore / IdentityProvider / CommandBus）、RBAC、审计与新端点 |
 
 ## 证据文件
 
