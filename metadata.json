@@ -1,0 +1,6 @@
+{
+  "name": "SuperAgent 团队研发管理平台",
+  "description": "多 CLI 协同编排、Git Worktree 物理隔离、Human Gates 人工门禁与云端团队记忆中枢控制台。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

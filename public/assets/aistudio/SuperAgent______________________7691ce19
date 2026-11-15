@@ -1,0 +1,206 @@
+﻿SuperAgent 团队研发管理平台 — 完整可执行技术方案
+1. 架构定位与开源项目选型映射
+本方案采用「控制面云端团队化、执行面本地沙箱化、记忆与规范双轨沉淀」的架构，将本地异构 AI CLI（Codex、WorkBuddy / CodeBuddy、Claude Code 等）升级为可协作、可审计、能持续进化的团队研发流水线。
+
+
+开源项目
+	核心能力定位
+	在本架构中的参考/复用点
+	nightly-labs/openbot
+	本地优先的多 Agent 桌面工作台
+	借鉴其对 Codex、Claude、OpenCode 等多 CLI 的进程托管、FIFO 任务队列及 Agent 间消息传递机制
+	TencentCloud/Octop
+	自托管多用户/多 Agent 平台
+	复用其双向 ACP（Agent Client Protocol）调度外部 Coding Agent 的模式、AgentTeams 协调器及企业 IM 网关
+	raylee-ai/lancer
+	基于 pi-gui 的桌面 AI 工作区
+	借鉴其并行 git worktree、AI 推理事件流（Event Tree）与文件系统变更的同步可视化交互
+	Tencent/teamai-cli
+	基于 Git 的团队 AI 原生底座
+	借鉴其三层结构（Team Execution / Context / Improvement），用 Git 同步团队 skills、rules、hooks 与基准评分
+	TencentCloud/TencentDB-Agent-Memory
+	团队级云端记忆中枢
+	核心参考其 4 类资产模型（Chat Memory / Skill / LLM-Wiki / CodeGraph）及 Fixed Binding + ACL 权限隔离
+	Tencent/LoopForge
+	自托管 Coding-Agent 交付流
+	核心参考其 Main Bot 拆解需求 → Docker 沙箱角色分工 → Human Gates 审批门禁 → 固化为 SOP 的闭环
+	awslabs/cli-agent-orchestrator
+	多 CLI 终端会话编排器
+	参考其通过隔离 tmux 会话 + HTTP/PTY WebSocket 接口，由 Supervisor Agent 统一调度多个 Worker CLI
+	stablyai/orca
+	多 Agent 并行开发工作台
+	借鉴其为每个并发 Agent 自动分配独立 git worktree 与 Diff 审查面板，彻底避免多 Agent 改代码冲突
+	mem0ai/mem0
+	轻量级插件化 Agent 记忆层
+	若初期需要轻量起步，可用 Apache 2.0 的 Mem0 自托管作为向量记忆替代
+	2. 四层系统架构与本地 CLI 统一适配
+系统划分为交互与可视化层、SuperAgent 编排中枢、本地异构 CLI 执行沙箱、云端团队记忆中枢四个平面：
+
+
+1. 接入与可视化层：支持 Web/桌面控制台、本地 CLI 与企业微信/飞书 IM 触发；前端将 Agent 推理事件流与 Worktree Diff 联动展示。
+2. 本地异构 CLI 统一适配层（Local Runner Daemon）：
+   * Headless JSON 流模式（首选）：调用 codex exec --json、claude -p --output-format stream-json、opencode run --format json 直接解析 NDJSON 事件流。
+   * ACP 双向协议模式：通过 stdio/WebSocket 双向拦截工具调用请求，实现跨 CLI 的统一高危操作审批。
+   * PTY / tmux 兜底模式：使用 node-pty + 隔离 tmux 会话托管交互式 CLI，并将终端流透传至控制台。
+   * git worktree 物理隔离：基于目标基线分支执行 git worktree add -b agent/<taskId> ~/.superagent/worktrees/<repo>/<taskId> <baseBranch>，自动软链只读依赖缓存并动态分配本地测试端口，完成后采集 Diff 快照并清理。
+3. 团队云端记忆与 Skill 自动提炼闭环
+采用「Git 管静态规范 + 云端管动态记忆 + 审核后晋升 Skill」双轨架构：
+
+
+1. 静态资产随 Git 同步：将 AGENTS.md、编码规范、项目级 Skills 与 Hooks 置于 .teamai/ 目录随仓库同步。
+2. 动态记忆云端分级存储：Daemon 脱敏上报 L0 原始会话，后台异步提炼为 L1 原子事实、L2 场景方案及仓库级 LLM-Wiki / CodeGraph；通过 Team / Project / User / Agent 四级 ACL 过滤，按需通过 MCP Tool 召回。
+3. Skill 自动提炼与防污染：仅当任务经历「失败 → 修复 → 通过验证」或在 PR 中收到人工纠偏时触发提炼；生成 status=draft 的 Skill 草案，经 Team Admin 查重并审核批准后发布至团队 Skill 池并同步回 Git。
+4. 自动化 Loop 状态机与 Human Gates 人工门禁
+状态流转：PENDING → RUNNING → VERIFYING → HUMAN_GATE → MERGED（校验失败进入 RETRY_WAIT 注入错误栈打回修复，超过 max_retries=3 触发 ESCALATED 熔断挂起）。
+
+
+* 确定性门禁前置：先本地运行 lint / typecheck / 单测，全绿后再由不同模型的 Reviewer Agent 交叉审查。
+* 三类人工门禁：Plan Gate（方案拆解确认）、Danger Gate（高危 Shell/敏感文件变更拦截）、Merge Gate（PR 合入确认）。挂起时写入 Checkpoint 并向 IM/控制台推送审批卡片，支持「批准放行 / 附带意见打回 / 终止」。
+5. 4 周 MVP 路线图与 Monorepo 工程结构
+* Week 1 (2026.11.16 – 11.22)：完成 packages/protocol 契约与 apps/daemon 的 git worktree 生命周期、Codex/Claude Headless 适配。
+* Week 2 (2026.11.23 – 11.29)：搭建 apps/server（Fastify/NestJS + PostgreSQL + Redis），跑通 DAG 调度、重试自愈与 HUMAN_GATE 挂起恢复。
+* Week 3 (2026.11.30 – 12.06)：基于 Vite + React + Zustand + Ant Design + React Flow 构建 apps/web 三栏控制台（DAG 画布、并行 Diff 检验舱、审批中心）。
+* Week 4 (2026.12.07 – 12.13)：上线 apps/memory-hub（pgvector + 异步提炼）与 .teamai/ 同步，完成 Skill Draft 审核闭环与 IM 集成压测。
+
+
+Monorepo 目录结构（pnpm + Turborepo）：
+
+
+super-agent-platform/
+├── package.json
+├── turbo.json
+├── .teamai/                      # 团队自身规范、Rules 与 SOP 模板
+├── apps/
+│   ├── web/                      # Vite + React + Zustand + Ant Design 控制台
+│   ├── server/                   # 云端编排中枢 (Fastify/NestJS + PG + Redis)
+│   ├── daemon/                   # 本地守护进程 (CLI Adapters + Worktree + Verifier)
+│   └── memory-hub/               # 云端记忆提炼、pgvector 检索与 MCP Server
+└── packages/
+    ├── protocol/                 # 共享 TS 类型：AgentEvent, TaskState, GateAction
+    ├── skill-sdk/                # Skill YAML Frontmatter 解析与校验
+    └── ui/                       # 通用 DiffViewer / LogTerminal 组件
+6. 前端控制台（apps/web）设计与 Zustand 状态流
+* 三栏联动布局：左栏（需求队列 + 门禁角标 + 在线 Daemon 状态）、中栏（@xyflow/react DAG 编排画布）、右栏（节点检验舱：Worktree 分支切换、Event Tree & xterm.js 终端流、Code Diff 与行级打回、底部 Gate 操作条）。
+* Zustand 分层与性能优化：拆分 useWorkspaceStore（低频 DAG 节点状态）与 useAgentStreamStore（高频流式事件）；终端 terminal_chunk 旁路直写 xterm.js 绕过 React Diff，结构化事件按 100ms 批量合批更新。
+7. 核心协议契约与 PostgreSQL 表结构
+7.1 packages/protocol/src/index.ts
+export type AgentProvider = 'codex' | 'workbuddy' | 'claude-code' | 'opencode';
+
+
+export type TaskState =
+  | 'PENDING' | 'RUNNING' | 'VERIFYING' | 'RETRY_WAIT'
+  | 'HUMAN_GATE' | 'ESCALATED' | 'MERGED' | 'CANCELLED';
+
+
+export interface DagNode {
+  id: string;
+  reqId: string;
+  title: string;
+  role: 'planner' | 'builder' | 'reviewer';
+  provider: AgentProvider;
+  dependsOn: string[];
+  state: TaskState;
+  retryCount: number;
+  maxRetries: number;
+  worktreeBranch?: string;
+}
+
+
+export type DaemonCommand =
+  | { type: 'SPAWN_TASK'; taskId: string; repoUrl: string; baseBranch: string; provider: AgentProvider; prompt: string; skills: string[] }
+  | { type: 'INJECT_RETRY'; taskId: string; feedback: string }
+  | { type: 'GATE_DECISION'; taskId: string; toolCallId?: string; approved: boolean; comment?: string }
+  | { type: 'ABORT_TASK'; taskId: string };
+
+
+export interface DaemonEnvelope {
+  machineId: string;
+  seq: number;
+  ts: number;
+  payload:
+    | { type: 'HEARTBEAT'; activeTaskIds: string[]; cpuLoad: number }
+    | { type: 'AGENT_EVENT'; taskId: string; event: unknown }
+    | { type: 'VERIFY_RESULT'; taskId: string; passed: boolean; logs: string; diffPatch: string }
+    | { type: 'STATE_ACK'; taskId: string; state: TaskState };
+}
+7.2 PostgreSQL + pgvector 核心 DDL
+CREATE EXTENSION IF NOT EXISTS vector;
+
+
+CREATE TABLE requirements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  team_id UUID NOT NULL,
+  title TEXT NOT NULL,
+  spec_md TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'PLANNING',
+  created_by UUID NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+
+CREATE TABLE task_nodes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  req_id UUID REFERENCES requirements(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  role TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  depends_on UUID[] DEFAULT '{}',
+  state TEXT NOT NULL DEFAULT 'PENDING',
+  retry_count INT NOT NULL DEFAULT 0,
+  max_retries INT NOT NULL DEFAULT 3,
+  assigned_machine TEXT,
+  worktree_branch TEXT,
+  diff_patch TEXT,
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+
+CREATE TABLE task_checkpoints (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id UUID REFERENCES task_nodes(id) ON DELETE CASCADE,
+  gate_type TEXT NOT NULL,
+  summary_md TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'WAITING',
+  reviewer_id UUID,
+  comment TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  resolved_at TIMESTAMPTZ
+);
+
+
+CREATE TABLE memory_assets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  team_id UUID NOT NULL,
+  project_id UUID,
+  owner_id UUID NOT NULL,
+  asset_type TEXT NOT NULL,
+  scope TEXT NOT NULL DEFAULT 'team',
+  status TEXT NOT NULL DEFAULT 'draft',
+  title TEXT NOT NULL,
+  content_md TEXT NOT NULL,
+  metadata JSONB DEFAULT '{}',
+  embedding vector(1536),
+  version INT NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+
+CREATE TABLE asset_acl (
+  asset_id UUID REFERENCES memory_assets(id) ON DELETE CASCADE,
+  subject_type TEXT NOT NULL,
+  subject_id TEXT NOT NULL,
+  permission TEXT NOT NULL DEFAULT 'read',
+  PRIMARY KEY (asset_id, subject_type, subject_id)
+);
+
+
+CREATE INDEX idx_memory_vec ON memory_assets USING hnsw (embedding vector_cosine_ops);
+8. Daemon 安全护栏与 Day-1 执行步骤
+* 断线续传：Daemon 本地 SQLite 缓存带递增 seq 的事件队列，重连后按 lastAckSeq 补发。
+* 沙箱护栏：路径白名单强制限定在 ~/.superagent/worktrees/<taskId>；高危命令（rm -rf /、DROP TABLE、git push --force）触发 DANGER_GATE；出站 L0 日志经过密钥/PII 正则脱敏后再上传云端。
+* Day-1 启动顺序：
+   1. 初始化 pnpm + turbo.json 并用 Docker Compose 拉起 PostgreSQL 16 (pgvector) 与 Redis 7，执行上述 DDL。
+   2. 实现 packages/protocol 与 apps/daemon 的 worktree 管理及 codex exec --json 适配器。
+   3. 启动 apps/server WebSocket 网关与状态机，验证单节点 RUNNING → VERIFYING → HUMAN_GATE → MERGED 闭环。
+   4. 接入 apps/web 三栏控制台验证并行 Worktree Diff 切换与打回重做。
+   5. 挂载 .teamai/ 规范同步与 apps/memory-hub 异步提炼，验证 Skill Draft 生成与发布。
