@@ -6,7 +6,6 @@
 
 ## 2. 确定性门禁前置
 - 提交 `MERGE_GATE` 前，Local Daemon 必须依次执行：
-  1. `pnpm lint`
-  2. `pnpm typecheck`
-  3. `pnpm test`
-- 上述三项全绿后，方可唤醒异构模型 Reviewer Agent 进行交叉审查。
+  1. `npm run lint`
+  2. `npm test`
+- 上述两项全绿后，方可唤醒异构模型 Reviewer Agent 进行交叉审查。

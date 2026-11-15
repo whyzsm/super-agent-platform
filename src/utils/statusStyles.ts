@@ -52,6 +52,24 @@ export const TASK_STATE_META: Record<
     borderClass: 'border-slate-200',
     bgClass: 'bg-slate-50',
   },
+  BLOCKED_BY_RESOURCE: {
+    label: '等待资源',
+    textClass: 'text-slate-600',
+    borderClass: 'border-slate-300',
+    bgClass: 'bg-slate-100',
+  },
+  QUARANTINED: {
+    label: '隔离待查',
+    textClass: 'text-red-700',
+    borderClass: 'border-red-400',
+    bgClass: 'bg-red-50',
+  },
+  WAITING_APPROVAL: {
+    label: '等待审批',
+    textClass: 'text-amber-800',
+    borderClass: 'border-amber-400',
+    bgClass: 'bg-amber-50',
+  },
 };
 
 export const GATE_TYPE_LABELS: Record<GateType, string> = {

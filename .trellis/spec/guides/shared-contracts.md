@@ -11,7 +11,7 @@
 ## 本地模式
 
 - 唯一来源：`src/protocol/index.ts`（约 214 行）。前后端都从它 `import type`（前端如 `src/utils/statusStyles.ts:1` 的 `../protocol`，后端 `server.ts:5` 起的 `./src/protocol`）。
-- 关键联合 / 接口：`AgentProvider`(4)、`AdapterMode`(3)、`TaskState`(8)、`GateType`(3)、`TaskRole`(3)、`SopTemplateId`(2)、`DagNode`、`Requirement`、`DaemonRunner`、`MemoryAsset`（`assetType` 5 种 / `scope` 4 级 / `status` `draft|published|archived`）、`AssetAclEntry`、`TeamAiAsset`、`DaemonCommand`、`DaemonEnvelope`、`AgentRunnerAdapter`、`NormalizedAgentEvent`、`AgentReasoningEvent`、`VerifierCheck`、`TaskCheckpoint`。
+- 关键联合 / 接口：`AgentProvider`(4)、`AdapterMode`(3)、`TaskState`(11，原 8 态 + S0-4 新增 BLOCKED_BY_RESOURCE / QUARANTINED / WAITING_APPROVAL)、`GateType`(3)、`TaskRole`(3)、`SopTemplateId`(2)、`DagNode`、`Requirement`、`DaemonRunner`、`MemoryAsset`（`assetType` 5 种 / `scope` 4 级 / `status` `draft|published|archived`）、`AssetAclEntry`、`TeamAiAsset`、`DaemonCommand`、`DaemonEnvelope`、`AgentRunnerAdapter`、`NormalizedAgentEvent`、`AgentReasoningEvent`、`VerifierCheck`、`TaskCheckpoint`。
 - 事件 / 命令用判别联合（`type` 字段）收窄，消费方按 `type` 分支，不用 `any`。
 - 展示映射用 `Record<Union, Meta>` 穷举：`src/utils/statusStyles.ts` 的 `TASK_STATE_META`、`GATE_TYPE_LABELS`、`PROVIDER_LABELS`、`ROLE_LABELS`、`SOP_TEMPLATE_LABELS`；新增枚举值会让 `npm run lint` 因缺 key 报错。详解见 [frontend/presentation-maps.md](../frontend/presentation-maps.md)。
 

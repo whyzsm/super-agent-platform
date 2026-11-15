@@ -14,7 +14,8 @@ export type SopTemplateId = 'feature_flow' | 'bugfix_flow';
 
 export type TaskState =
   | 'PENDING' | 'RUNNING' | 'VERIFYING' | 'RETRY_WAIT'
-  | 'HUMAN_GATE' | 'ESCALATED' | 'MERGED' | 'CANCELLED';
+  | 'HUMAN_GATE' | 'ESCALATED' | 'MERGED' | 'CANCELLED'
+  | 'BLOCKED_BY_RESOURCE' | 'QUARANTINED' | 'WAITING_APPROVAL';
 
 export interface NodeTokenUsage {
   inputTokens: number;

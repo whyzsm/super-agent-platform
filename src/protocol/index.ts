@@ -10,7 +10,10 @@ export type TaskState =
   | 'HUMAN_GATE'
   | 'ESCALATED'
   | 'MERGED'
-  | 'CANCELLED';
+  | 'CANCELLED'
+  | 'BLOCKED_BY_RESOURCE'
+  | 'QUARANTINED'
+  | 'WAITING_APPROVAL';
 
 export type GateType = 'PLAN_GATE' | 'DANGER_GATE' | 'MERGE_GATE';
 

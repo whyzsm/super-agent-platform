@@ -10,7 +10,7 @@
 
 ## 本地模式
 
-- 共享类型只在 `src/protocol/index.ts`：`AgentProvider`（4 值）、`AdapterMode`（3 值）、`TaskState`（8 态）、`GateType`（3 类）、`TaskRole`（3 类）、`SopTemplateId`（2 值）、`DagNode`、`Requirement`、`DaemonRunner`、`MemoryAsset`（`assetType` 5 种 / `scope` 4 级 / `status` `draft|published|archived`）、`AssetAclEntry`、`TeamAiAsset`、`DaemonCommand`、`DaemonEnvelope`、`AgentRunnerAdapter`、`NormalizedAgentEvent`、`AgentReasoningEvent`、`VerifierCheck`、`TaskCheckpoint`。
+- 共享类型只在 `src/protocol/index.ts`：`AgentProvider`（4 值）、`AdapterMode`（3 值）、`TaskState`（11 态：原 8 态 + S0-4 的 BLOCKED_BY_RESOURCE / QUARANTINED / WAITING_APPROVAL）、`GateType`（3 类）、`TaskRole`（3 类）、`SopTemplateId`（2 值）、`DagNode`、`Requirement`、`DaemonRunner`、`MemoryAsset`（`assetType` 5 种 / `scope` 4 级 / `status` `draft|published|archived`）、`AssetAclEntry`、`TeamAiAsset`、`DaemonCommand`、`DaemonEnvelope`、`AgentRunnerAdapter`、`NormalizedAgentEvent`、`AgentReasoningEvent`、`VerifierCheck`、`TaskCheckpoint`。
 - 前端用 `import type { ... } from '../protocol'`（如 `src/utils/statusStyles.ts:1`、`src/components/TeamAiProtocolView.tsx:3`）。
 - 展示映射用 `Record<Union, Meta>` 让穷举性可检查：`TASK_STATE_META`、`GATE_TYPE_LABELS`、`PROVIDER_LABELS`、`ROLE_LABELS`、`SOP_TEMPLATE_LABELS`（`src/utils/statusStyles.ts`）——新增枚举值时编译期会因缺 key 报错。
 - 判别联合用于事件 / 命令：`NormalizedAgentEvent`、`DaemonCommand` 以 `type` 分支，消费处按 `type` 收窄。

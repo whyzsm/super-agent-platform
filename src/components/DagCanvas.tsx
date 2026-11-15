@@ -52,6 +52,12 @@ function StateIcon({ state }: { state: TaskState }) {
     case 'RUNNING':
     case 'VERIFYING':
       return <Terminal className="w-3.5 h-3.5 text-blue-700" aria-hidden="true" />;
+    case 'BLOCKED_BY_RESOURCE':
+      return <Clock className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />;
+    case 'QUARANTINED':
+      return <ShieldAlert className="w-3.5 h-3.5 text-red-700" aria-hidden="true" />;
+    case 'WAITING_APPROVAL':
+      return <BookmarkCheck className="w-3.5 h-3.5 text-amber-700" aria-hidden="true" />;
     default:
       return <Clock className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />;
   }

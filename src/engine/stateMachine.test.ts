@@ -152,3 +152,77 @@ test('recordUsageAndCheckBudget escalates task when token budget_limit is exceed
   assert.equal(overStep.nextNode.state, 'ESCALATED');
   assert.ok(overStep.nextNode.activeCheckpoint?.summaryMd.includes('Token 预算熔断'));
 });
+
+test('canTransition allows the legal exits of the 3 new states', () => {
+  // BLOCKED_BY_RESOURCE 可回 RUNNING 或 CANCELLED
+  assert.equal(canTransition('BLOCKED_BY_RESOURCE', 'RUNNING'), true);
+  assert.equal(canTransition('BLOCKED_BY_RESOURCE', 'CANCELLED'), true);
+  // QUARANTINED 可回 RETRY_WAIT 或 CANCELLED
+  assert.equal(canTransition('QUARANTINED', 'RETRY_WAIT'), true);
+  assert.equal(canTransition('QUARANTINED', 'CANCELLED'), true);
+  // WAITING_APPROVAL 可到 RUNNING / MERGED / CANCELLED
+  assert.equal(canTransition('WAITING_APPROVAL', 'RUNNING'), true);
+  assert.equal(canTransition('WAITING_APPROVAL', 'MERGED'), true);
+  assert.equal(canTransition('WAITING_APPROVAL', 'CANCELLED'), true);
+});
+
+test('canTransition lets RUNNING / HUMAN_GATE / ESCALATED and peers enter the 3 new states', () => {
+  assert.equal(canTransition('PENDING', 'BLOCKED_BY_RESOURCE'), true);
+  assert.equal(canTransition('RUNNING', 'BLOCKED_BY_RESOURCE'), true);
+  assert.equal(canTransition('RUNNING', 'QUARANTINED'), true);
+  assert.equal(canTransition('RUNNING', 'WAITING_APPROVAL'), true);
+  assert.equal(canTransition('VERIFYING', 'QUARANTINED'), true);
+  assert.equal(canTransition('RETRY_WAIT', 'BLOCKED_BY_RESOURCE'), true);
+  assert.equal(canTransition('RETRY_WAIT', 'QUARANTINED'), true);
+  assert.equal(canTransition('HUMAN_GATE', 'WAITING_APPROVAL'), true);
+  assert.equal(canTransition('ESCALATED', 'QUARANTINED'), true);
+  assert.equal(canTransition('ESCALATED', 'WAITING_APPROVAL'), true);
+});
+
+test('canTransition rejects illegal transitions involving the 3 new states', () => {
+  // 终态不可再迁出
+  assert.equal(canTransition('MERGED', 'BLOCKED_BY_RESOURCE'), false);
+  assert.equal(canTransition('CANCELLED', 'QUARANTINED'), false);
+  // 新状态的出口必须有限：未列入的迁移一律拒绝
+  assert.equal(canTransition('BLOCKED_BY_RESOURCE', 'MERGED'), false);
+  assert.equal(canTransition('BLOCKED_BY_RESOURCE', 'VERIFYING'), false);
+  assert.equal(canTransition('QUARANTINED', 'RUNNING'), false);
+  assert.equal(canTransition('QUARANTINED', 'MERGED'), false);
+  assert.equal(canTransition('WAITING_APPROVAL', 'PENDING'), false);
+  assert.equal(canTransition('WAITING_APPROVAL', 'VERIFYING'), false);
+  // 不允许任意旧状态跳进这些新状态
+  assert.equal(canTransition('PENDING', 'QUARANTINED'), false);
+  assert.equal(canTransition('PENDING', 'WAITING_APPROVAL'), false);
+});
+
+test('canTransition keeps the original 8-state transition semantics unchanged', () => {
+  // 原有正向迁移全部保留
+  assert.equal(canTransition('PENDING', 'RUNNING'), true);
+  assert.equal(canTransition('PENDING', 'CANCELLED'), true);
+  assert.equal(canTransition('RUNNING', 'VERIFYING'), true);
+  assert.equal(canTransition('RUNNING', 'HUMAN_GATE'), true);
+  assert.equal(canTransition('RUNNING', 'RETRY_WAIT'), true);
+  assert.equal(canTransition('RUNNING', 'ESCALATED'), true);
+  assert.equal(canTransition('RUNNING', 'CANCELLED'), true);
+  assert.equal(canTransition('VERIFYING', 'HUMAN_GATE'), true);
+  assert.equal(canTransition('VERIFYING', 'RETRY_WAIT'), true);
+  assert.equal(canTransition('VERIFYING', 'ESCALATED'), true);
+  assert.equal(canTransition('VERIFYING', 'CANCELLED'), true);
+  assert.equal(canTransition('RETRY_WAIT', 'RUNNING'), true);
+  assert.equal(canTransition('RETRY_WAIT', 'ESCALATED'), true);
+  assert.equal(canTransition('RETRY_WAIT', 'CANCELLED'), true);
+  assert.equal(canTransition('HUMAN_GATE', 'MERGED'), true);
+  assert.equal(canTransition('HUMAN_GATE', 'RUNNING'), true);
+  assert.equal(canTransition('HUMAN_GATE', 'RETRY_WAIT'), true);
+  assert.equal(canTransition('HUMAN_GATE', 'ESCALATED'), true);
+  assert.equal(canTransition('HUMAN_GATE', 'CANCELLED'), true);
+  assert.equal(canTransition('ESCALATED', 'RETRY_WAIT'), true);
+  assert.equal(canTransition('ESCALATED', 'RUNNING'), true);
+  assert.equal(canTransition('ESCALATED', 'CANCELLED'), true);
+  // 原有被拒绝的迁移仍被拒绝（未被新状态放宽）
+  assert.equal(canTransition('PENDING', 'MERGED'), false);
+  assert.equal(canTransition('VERIFYING', 'RUNNING'), false);
+  assert.equal(canTransition('MERGED', 'RUNNING'), false);
+  assert.equal(canTransition('MERGED', 'CANCELLED'), false);
+  assert.equal(canTransition('CANCELLED', 'RUNNING'), false);
+});

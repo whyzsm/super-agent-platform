@@ -11,7 +11,7 @@
 ## 本地模式
 
 - 唯一落点 `src/utils/statusStyles.ts`，5 个 `Record<Union, Meta>` 映射：
-  - `TASK_STATE_META`（`:3`）：`Record<TaskState, { label; textClass; borderClass; bgClass }>`，覆盖 8 态（PENDING / RUNNING / VERIFYING / RETRY_WAIT / HUMAN_GATE / ESCALATED / MERGED / CANCELLED），值是 Tailwind class 字符串（如 `text-emerald-700` / `bg-emerald-50`）。
+  - `TASK_STATE_META`（`:3`）：`Record<TaskState, { label; textClass; borderClass; bgClass }>`，覆盖 11 态（原 8 态 PENDING / RUNNING / VERIFYING / RETRY_WAIT / HUMAN_GATE / ESCALATED / MERGED / CANCELLED，加 S0-4 新增的 BLOCKED_BY_RESOURCE / QUARANTINED / WAITING_APPROVAL），值是 Tailwind class 字符串（如 `text-emerald-700` / `bg-emerald-50`）。`TaskState` 加值时此 Record 必须同步，否则 `npm run lint` 会因缺 key 失败。
   - `GATE_TYPE_LABELS`（`:57`）：`Record<GateType, string>`，PLAN_GATE / DANGER_GATE / MERGE_GATE → 中英混排标签。
   - `PROVIDER_LABELS`（`:63`）：`Record<AgentProvider, string>`（Codex CLI / WorkBuddy / Claude Code / OpenCode）。
   - `ROLE_LABELS`（`:70`）：`Record<TaskRole, string>`（Planner / Builder / Reviewer）。
