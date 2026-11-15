@@ -32,6 +32,13 @@
 - 理由：二者后果只是多一次人工 Danger Gate 审批（偏安全方向），放松拦截面才是风险方向；且 `.env.example` 访问在真实 CLI 会话中也常伴随读真实 `.env` 的试探。
 - 附带怪癖：`[REDACTED_DB_PASS]` 占位符会被 DB 规则在口令位二次匹配，但替换恒等、输出稳定（幂等性用例已固化）。
 
+## D-2026-11-16-05 S3-2 前半：SOP/DAG 模板注册表
+
+- 背景：`feature_flow`（4 节点）/ `bugfix_flow`（3 节点）两套 DAG 拓扑硬编码在需求创建路由里（约 250 行字面量），新增模板 = 复制粘贴。
+- 决策：抽 `src/dag/templates.ts` 注册表——模板 = 元数据 + 纯函数 `build(ctx) => DagNode[]`；节点字面量**逐字保留**（行为零变更），闭包变量（reqId/newReq/provider/nowIso/timeStr/++seq）换成本入参 `DagTemplateContext`；`normalizeSopTemplateId` 保留历史兜底（非 `'bugfix_flow'` 一律 feature_flow）。路由只留校验与装配。
+- 理由：S1-1 时已明确此项独立于拆分；现在注册表 + 9 个结构/拓扑/兜底用例让「新增模板」变成登记 + 测试，而不是再复制一段字面量。
+- 边界（后半未做，诚实标注）：模板版本化与子 SOP 组合复用未实现；`deriveRetrospective`/solidify-sop 与注册表的双向衔接属 S3-2 后半。
+
 ## D-2026-11-16-03 S1-1 拆分形态（补记，上轮已按此执行）
 
 - 决策：`server.ts` 拆为启动引导 + `src/server/` 9 个域模块；共享闭包收敛为 `ServerContext`（`state`/`seq` 盒子）；handler verbatim 迁移，不趁机混入 S3-2 模板注册表。

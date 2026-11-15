@@ -32,6 +32,7 @@
 │   ├── data/seed.ts             # PlatformState / createInitialSeedState()
 │   ├── protocol/index.ts        # 前后端唯一共享契约（见 guides/shared-contracts.md）
 │   ├── engine/stateMachine.ts   # 纯函数：状态机 / DAG / 预算 / 门禁 / 脱敏 / SOP 解析
+│   ├── dag/templates.ts          # SOP/DAG 模板注册表（S3-2 前半）：feature_flow / bugfix_flow
 │   ├── daemon/ndjsonParser.ts   # CLI NDJSON 解析 + OfflineSeqQueue
 │   ├── gateway/imWebhook.ts     # HMAC 验签 + 审批卡片
 │   ├── policy/                  # 策略规则集（S2-9）：危险命令/脱敏/白名单/路由动作
